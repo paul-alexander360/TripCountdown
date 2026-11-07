@@ -13,6 +13,7 @@ data class Trip(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
     val epochDay: Long,
+    val endEpochDay: Long = epochDay,
     val photoPath: String? = null
 )
 
@@ -30,6 +31,7 @@ object TripStore {
                     id = o.getString("id"),
                     name = o.getString("name"),
                     epochDay = o.getLong("epochDay"),
+                    endEpochDay = o.optLong("endEpochDay", o.getLong("epochDay")),
                     photoPath = if (o.isNull("photoPath")) null else o.getString("photoPath")
                 )
             }
@@ -45,6 +47,7 @@ object TripStore {
                 put("id", it.id)
                 put("name", it.name)
                 put("epochDay", it.epochDay)
+                put("endEpochDay", it.endEpochDay)
                 put("photoPath", it.photoPath ?: JSONObject.NULL)
             })
         }
