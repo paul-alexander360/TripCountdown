@@ -1,183 +1,84 @@
 package com.example.tripcountdown
 
-import android.app.DatePickerDialog
+import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.compose.setContent
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
+import android.net.Uri
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.util.UUID
 
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent { MaterialTheme { TripApp() } }
-    }
-}
+data class Trip(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val epochDay: Long,
+    val endEpochDay: Long = epochDay,
+    val photoPath: String? = null
+)
 
-private val dateFmt = DateTimeFormatter.ofPattern("EEE, MMM d, yyyy")
+object TripStore {
+    private fun file(ctx: Context) = File(ctx.filesDir, "trips.json")
 
-private fun countdown(epochDay: Long): String {
-    val d = ChronoUnit.DAYS.between(LocalDate.now(), LocalDate.ofEpochDay(epochDay))
-    return when {
-        d > 1 -> "$d days to go"
-        d == 1L -> "Tomorrow!"
-        d == 0L -> "Today!"
-        else -> "Past trip"
-    }
-}
-
-@Composable
-fun TripApp() {
-    val ctx = LocalContext.current
-    val trips = remember { mutableStateListOf<Trip>().apply { addAll(TripStore.load(ctx)) } }
-    var editing by remember { mutableStateOf<Trip?>(null) }
-    var adding by remember { mutableStateOf(false) }
-
-    fun persist() = TripStore.save(ctx, trips.toList())
-
-    val sorted = trips.sortedBy { it.epochDay }
-
-    Scaffold(
-        floatingActionButton = {
-            FloatingActionButton(onClick = { adding = true }) { Text("+", style = MaterialTheme.typography.headlineMedium) }
-        }
-    ) { pad ->
-        Column(Modifier.padding(pad).padding(horizontal = 16.dp)) {
-            Spacer(Modifier.height(24.dp))
-            Text("My Trips", style = MaterialTheme.typography.headlineLarge)
-            Spacer(Modifier.height(12.dp))
-            if (sorted.isEmpty()) {
-                Text("No trips yet. Tap + to add your first one.")
+    fun load(ctx: Context): List<Trip> {
+        val f = file(ctx)
+        if (!f.exists()) return emptyList()
+        return try {
+            val arr = JSONArray(f.readText())
+            (0 until arr.length()).map {
+                val o = arr.getJSONObject(it)
+                Trip(
+                    id = o.getString("id"),
+                    name = o.getString("name"),
+                    epochDay = o.getLong("epochDay"),
+                    endEpochDay = o.optLong("endEpochDay", o.getLong("epochDay")),
+                    photoPath = if (o.isNull("photoPath")) null else o.getString("photoPath")
+                )
             }
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(sorted, key = { it.id }) { trip ->
-                    TripCard(trip) { editing = trip }
-                }
-                item { Spacer(Modifier.height(80.dp)) }
-            }
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 
-    if (adding) {
-        TripEditor(
-            initial = null,
-            onSave = { trips.add(it); persist(); adding = false },
-            onDelete = null,
-            onDismiss = { adding = false }
-        )
-    }
-    editing?.let { current ->
-        TripEditor(
-            initial = current,
-            onSave = { updated ->
-                if (updated.photoPath != current.photoPath) TripStore.deletePhoto(current.photoPath)
-                val i = trips.indexOfFirst { it.id == current.id }
-                if (i >= 0) trips[i] = updated
-                persist(); editing = null
-            },
-            onDelete = {
-                TripStore.deletePhoto(current.photoPath)
-                trips.removeAll { it.id == current.id }
-                persist(); editing = null
-            },
-            onDismiss = { editing = null }
-        )
-    }
-}
-
-@Composable
-fun TripPhoto(path: String?, modifier: Modifier) {
-    val bmp = remember(path) { path?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() } }
-    if (bmp != null) {
-        Image(bmp, contentDescription = null, contentScale = ContentScale.Crop, modifier = modifier)
-    } else {
-        Box(modifier.background(Color(0xFFCFD8DC)), contentAlignment = Alignment.Center) { Text("No photo") }
-    }
-}
-
-@Composable
-fun TripCard(trip: Trip, onClick: () -> Unit) {
-    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Column {
-            TripPhoto(trip.photoPath, Modifier.fillMaxWidth().height(160.dp))
-            Column(Modifier.padding(12.dp)) {
-                Text(trip.name, style = MaterialTheme.typography.titleLarge)
-                Text(LocalDate.ofEpochDay(trip.epochDay).format(dateFmt))
-                Text(countdown(trip.epochDay), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            }
+    fun save(ctx: Context, trips: List<Trip>) {
+        val arr = JSONArray()
+        trips.forEach {
+            arr.put(JSONObject().apply {
+                put("id", it.id)
+                put("name", it.name)
+                put("epochDay", it.epochDay)
+                put("endEpochDay", it.endEpochDay)
+                put("photoPath", it.photoPath ?: JSONObject.NULL)
+            })
         }
+        file(ctx).writeText(arr.toString())
     }
-}
 
-@Composable
-fun TripEditor(
-    initial: Trip?,
-    onSave: (Trip) -> Unit,
-    onDelete: (() -> Unit)?,
-    onDismiss: () -> Unit
-) {
-    val ctx = LocalContext.current
-    var name by remember { mutableStateOf(initial?.name ?: "") }
-    var date by remember {
-        mutableStateOf(initial?.let { LocalDate.ofEpochDay(it.epochDay) } ?: LocalDate.now().plusDays(30))
-    }
-    var photo by remember { mutableStateOf(initial?.photoPath) }
-
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) TripStore.importPhoto(ctx, uri)?.let { newPath ->
-            if (photo != null && photo != initial?.photoPath) TripStore.deletePhoto(photo)
-            photo = newPath
+    /** Copies the chosen photo into the app's private storage, shrunk to max 1080px. */
+    fun importPhoto(ctx: Context, uri: Uri): String? {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            var sample = 1
+            while (bounds.outWidth / sample > 2200 || bounds.outHeight / sample > 2200) sample *= 2
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            val bmp = ctx.contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, opts)
+            } ?: return null
+            val scale = 1080f / maxOf(bmp.width, bmp.height)
+            val out = if (scale < 1f)
+                Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true)
+            else bmp
+            val dir = File(ctx.filesDir, "photos").apply { mkdirs() }
+            val dest = File(dir, UUID.randomUUID().toString() + ".jpg")
+            dest.outputStream().use { out.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+            dest.absolutePath
+        } catch (e: Exception) {
+            null
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "New trip" else "Edit trip") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text("Trip name") }, singleLine = true)
-                OutlinedButton(onClick = {
-                    DatePickerDialog(ctx, { _, y, m, d -> date = LocalDate.of(y, m + 1, d) },
-                        date.year, date.monthValue - 1, date.dayOfMonth).show()
-                }) { Text(date.format(dateFmt)) }
-                TripPhoto(photo, Modifier.fillMaxWidth().height(130.dp).clip(RoundedCornerShape(8.dp)))
-                OutlinedButton(onClick = {
-                    picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                }) { Text(if (photo == null) "Choose photo" else "Change photo") }
-                if (onDelete != null) {
-                    TextButton(onClick = onDelete) { Text("Delete trip", color = MaterialTheme.colorScheme.error) }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = name.isNotBlank(),
-                onClick = { onSave(Trip(id = initial?.id ?: java.util.UUID.randomUUID().toString(),
-                    name = name.trim(), epochDay = date.toEpochDay(), photoPath = photo)) }
-            ) { Text("Save") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
+    fun deletePhoto(path: String?) {
+        if (path != null) File(path).delete()
+    }
 }
