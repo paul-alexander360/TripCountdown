@@ -23,6 +23,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -135,15 +139,29 @@ fun TripPhoto(path: String?, modifier: Modifier) {
     }
 }
 
+private val textShadow = Shadow(color = Color.Black, offset = Offset(6f, 6f), blurRadius = 6f)
+
+@Composable
+fun ShadowText(text: String, style: TextStyle) {
+    Box {
+        repeat(2) { Text(text, color = Color.White, style = style.copy(shadow = textShadow)) }
+    }
+}
+
 @Composable
 fun TripCard(trip: Trip, onClick: () -> Unit) {
     Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Column {
-            TripPhoto(trip.photoPath, Modifier.fillMaxWidth().height(160.dp))
-            Column(Modifier.padding(12.dp)) {
-                Text(trip.name, style = MaterialTheme.typography.titleLarge)
-                Text(dateRange(trip))
-                Text(countdown(trip), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Box(Modifier.fillMaxWidth().height(200.dp)) {
+            TripPhoto(trip.photoPath, Modifier.fillMaxSize())
+            Column(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, bottom = 10.dp)
+            ) {
+                ShadowText(trip.name, MaterialTheme.typography.titleLarge)
+                ShadowText(dateRange(trip), MaterialTheme.typography.bodyLarge)
+                ShadowText(countdown(trip), MaterialTheme.typography.titleMedium)
             }
         }
     }
