@@ -1,6 +1,7 @@
 package com.example.tripcountdown
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -50,7 +51,7 @@ class TripWidget : GlanceAppWidget() {
                 provider = ImageProvider(bmp),
                 contentDescription = "Next trip",
                 contentScale = ContentScale.Crop,
-                modifier = GlanceModifier.fillMaxSize().clickable(actionStartActivity<MainActivity>())
+                modifier = GlanceModifier.fillMaxSize().clickable(actionStartActivity(Intent(context, MainActivity::class.java)))
             )
         }
     }
@@ -126,4 +127,3 @@ private fun renderWidgetBitmap(trip: Trip?, w: Int, h: Int, density: Float): Bit
     drawLine(canvas, trip.name, true, h * 0.20f, margin, y, availW)
     return bmp
 }
-
