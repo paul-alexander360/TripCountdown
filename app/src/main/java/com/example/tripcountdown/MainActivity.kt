@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -383,9 +384,11 @@ fun AppBar(
             .zIndex(1f)
             .fillMaxWidth()
             .shadow(8.dp)
-            .background(Color(0xFF1565C0))
     ) {
-        Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.fillMaxWidth().height(48.dp).background(Color(0xFF1565C0)),
+            contentAlignment = Alignment.Center
+        ) {
             Text(
                 title,
                 color = Color.White,
@@ -398,20 +401,13 @@ fun AppBar(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
-                    .height(44.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .height(48.dp)
                     .background(Color.White)
+                    .border(1.dp, Color.Black)
             ) {
                 segments.forEachIndexed { i, (label, click) ->
                     if (i > 0) {
-                        Box(
-                            Modifier
-                                .width(1.dp)
-                                .fillMaxHeight()
-                                .padding(vertical = 10.dp)
-                                .background(Color(0xFFD0D7DE))
-                        )
+                        Box(Modifier.width(1.dp).fillMaxHeight().background(Color.Black))
                     }
                     TextButton(
                         onClick = click,
