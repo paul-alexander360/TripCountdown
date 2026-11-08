@@ -16,6 +16,12 @@ data class TodoItem(
     val dueEpochDay: Long? = null
 )
 
+data class Attachment(
+    val id: String = UUID.randomUUID().toString(),
+    val label: String,
+    val path: String
+)
+
 data class Trip(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
@@ -25,11 +31,20 @@ data class Trip(
     val focusX: Float = 0.5f,
     val focusY: Float = 0.5f,
     val zoom: Float = 1f,
-    val todos: List<TodoItem> = emptyList()
+    val todos: List<TodoItem> = emptyList(),
+    val attachments: List<Attachment> = emptyList()
 )
 
 object TripStore {
     private fun file(ctx: Context) = File(ctx.filesDir, "trips.json")
+
+    private fun readAttachments(arr: JSONArray?): List<Attachment> {
+        if (arr == null) return emptyList()
+        return (0 until arr.length()).map {
+            val o = arr.getJSONObject(it)
+            Attachment(o.getString("id"), o.getString("label"), o.getString("path"))
+        }
+    }
 
     private fun readTodos(arr: JSONArray?): List<TodoItem> {
         if (arr == null) return emptyList()
@@ -58,7 +73,8 @@ object TripStore {
                     focusX = o.optDouble("focusX", 0.5).toFloat(),
                     focusY = o.optDouble("focusY", 0.5).toFloat(),
                     zoom = o.optDouble("zoom", 1.0).toFloat(),
-                    todos = readTodos(o.optJSONArray("todos"))
+                    todos = readTodos(o.optJSONArray("todos")),
+                    attachments = readAttachments(o.optJSONArray("attachments"))
                 )
             }
         } catch (e: Exception) {
@@ -78,6 +94,15 @@ object TripStore {
                 put("focusX", it.focusX.toDouble())
                 put("focusY", it.focusY.toDouble())
                 put("zoom", it.zoom.toDouble())
+                put("attachments", JSONArray().also { list ->
+                    it.attachments.forEach { a ->
+                        list.put(JSONObject().apply {
+                            put("id", a.id)
+                            put("label", a.label)
+                            put("path", a.path)
+                        })
+                    }
+                })
                 put("todos", JSONArray().also { list ->
                     it.todos.forEach { t ->
                         list.put(JSONObject().apply {
@@ -94,23 +119,23 @@ object TripStore {
     }
 
     /** Copies the chosen photo into the app's private storage, shrunk to max 1080px. */
-    fun importPhoto(ctx: Context, uri: Uri): String? {
+    fun importPhoto(ctx: Context, uri: Uri, maxDim: Int = 1080): String? {
         return try {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
             var sample = 1
-            while (bounds.outWidth / sample > 2200 || bounds.outHeight / sample > 2200) sample *= 2
+            while (bounds.outWidth / sample > maxDim * 2 || bounds.outHeight / sample > maxDim * 2) sample *= 2
             val opts = BitmapFactory.Options().apply { inSampleSize = sample }
             val bmp = ctx.contentResolver.openInputStream(uri)?.use {
                 BitmapFactory.decodeStream(it, null, opts)
             } ?: return null
-            val scale = 1080f / maxOf(bmp.width, bmp.height)
+            val scale = maxDim.toFloat() / maxOf(bmp.width, bmp.height)
             val out = if (scale < 1f)
                 Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true)
             else bmp
             val dir = File(ctx.filesDir, "photos").apply { mkdirs() }
             val dest = File(dir, UUID.randomUUID().toString() + ".jpg")
-            dest.outputStream().use { out.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+            dest.outputStream().use { out.compress(Bitmap.CompressFormat.JPEG, if (maxDim > 1080) 92 else 85, it) }
             dest.absolutePath
         } catch (e: Exception) {
             null
