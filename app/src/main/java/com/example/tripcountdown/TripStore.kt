@@ -14,7 +14,10 @@ data class Trip(
     val name: String,
     val epochDay: Long,
     val endEpochDay: Long = epochDay,
-    val photoPath: String? = null
+    val photoPath: String? = null,
+    val focusX: Float = 0.5f,
+    val focusY: Float = 0.5f,
+    val zoom: Float = 1f
 )
 
 object TripStore {
@@ -32,7 +35,10 @@ object TripStore {
                     name = o.getString("name"),
                     epochDay = o.getLong("epochDay"),
                     endEpochDay = o.optLong("endEpochDay", o.getLong("epochDay")),
-                    photoPath = if (o.isNull("photoPath")) null else o.getString("photoPath")
+                    photoPath = if (o.isNull("photoPath")) null else o.getString("photoPath"),
+                    focusX = o.optDouble("focusX", 0.5).toFloat(),
+                    focusY = o.optDouble("focusY", 0.5).toFloat(),
+                    zoom = o.optDouble("zoom", 1.0).toFloat()
                 )
             }
         } catch (e: Exception) {
@@ -49,6 +55,9 @@ object TripStore {
                 put("epochDay", it.epochDay)
                 put("endEpochDay", it.endEpochDay)
                 put("photoPath", it.photoPath ?: JSONObject.NULL)
+                put("focusX", it.focusX.toDouble())
+                put("focusY", it.focusY.toDouble())
+                put("zoom", it.zoom.toDouble())
             })
         }
         file(ctx).writeText(arr.toString())
