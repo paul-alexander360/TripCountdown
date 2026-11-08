@@ -23,6 +23,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -87,19 +92,33 @@ fun TripApp() {
     var editing by remember { mutableStateOf<Trip?>(null) }
     var adding by remember { mutableStateOf(false) }
     var viewingId by remember { mutableStateOf<String?>(null) }
+    var showTodos by remember { mutableStateOf(false) }
 
     fun persist() = TripStore.save(ctx, trips.toList())
 
     val sorted = trips.sortedBy { it.epochDay }
 
     val viewing = trips.find { it.id == viewingId }
-    BackHandler(enabled = viewing != null) { viewingId = null }
+    BackHandler(enabled = viewing != null) { if (showTodos) showTodos = false else viewingId = null }
 
-    if (viewing != null) {
+    if (viewing != null && showTodos) {
+        TodoScreen(
+            trip = viewing,
+            onBack = { showTodos = false },
+            onChange = { list ->
+                val i = trips.indexOfFirst { it.id == viewing.id }
+                if (i >= 0) {
+                    trips[i] = trips[i].copy(todos = list)
+                    persist()
+                }
+            }
+        )
+    } else if (viewing != null) {
         TripDetails(
             trip = viewing,
             onBack = { viewingId = null },
             onEdit = { editing = viewing },
+            onTodos = { showTodos = true },
             onDelete = {
                 TripStore.deletePhoto(viewing.photoPath)
                 trips.removeAll { it.id == viewing.id }
@@ -129,7 +148,7 @@ fun TripApp() {
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(sorted, key = { it.id }) { trip ->
-                    TripCard(trip) { viewingId = trip.id }
+                    TripCard(trip) { viewingId = trip.id; showTodos = false }
                 }
                 item { Spacer(Modifier.height(80.dp)) }
             }
@@ -249,7 +268,7 @@ fun TripCard(trip: Trip, onClick: () -> Unit) {
 }
 
 @Composable
-fun TripDetails(trip: Trip, onBack: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
+fun TripDetails(trip: Trip, onBack: () -> Unit, onEdit: () -> Unit, onTodos: () -> Unit, onDelete: () -> Unit) {
     var showTodoNote by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
@@ -279,7 +298,7 @@ fun TripDetails(trip: Trip, onBack: () -> Unit, onEdit: () -> Unit, onDelete: ()
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             FieldButton(
-                onClick = { showTodoNote = true },
+                onClick = onTodos,
                 modifier = Modifier.weight(1f).height(56.dp),
                 contentPadding = PaddingValues(horizontal = 4.dp)
             ) { Text("To-do list", maxLines = 1) }
@@ -316,6 +335,128 @@ fun TripDetails(trip: Trip, onBack: () -> Unit, onEdit: () -> Unit, onDelete: ()
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } }
         )
+    }
+}
+
+@Composable
+fun TodoScreen(trip: Trip, onBack: () -> Unit, onChange: (List<TodoItem>) -> Unit) {
+    var newText by remember { mutableStateOf("") }
+    val ctx = LocalContext.current
+    val todos = trip.todos
+
+    fun add(text: String) {
+        val t = text.trim()
+        if (t.isNotEmpty()) {
+            onChange(todos + TodoItem(text = t))
+            newText = ""
+        }
+    }
+
+    val doneCount = todos.count { it.done }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xFFE8EEF4))
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        TextButton(onClick = onBack) {
+            Text("\u2039 Back to trip", style = MaterialTheme.typography.titleMedium)
+        }
+        Column {
+            Text(trip.name, style = MaterialTheme.typography.headlineMedium)
+            Text(
+                if (todos.isEmpty()) "No to-dos yet" else "$doneCount of ${todos.size} done",
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color(0xFF455A64)
+            )
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextField(
+                newText, { newText = it },
+                label = { Text("Add a to-do") },
+                singleLine = true,
+                shape = cardShape,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { add(newText) }),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent
+                ),
+                modifier = Modifier.weight(1f).cardShadow()
+            )
+            FieldButton(
+                onClick = { add(newText) },
+                modifier = Modifier.width(84.dp).height(56.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp)
+            ) { Text("Add") }
+        }
+        if (todos.isNotEmpty()) {
+            Column(Modifier.fillMaxWidth().cardShadow().background(Color.White)) {
+                todos.forEachIndexed { index, item ->
+                    if (index > 0) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .height(1.dp)
+                                .background(Color(0xFFE0E6EB))
+                        )
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = item.done,
+                            onCheckedChange = { c -> onChange(todos.map { if (it.id == item.id) it.copy(done = c) else it }) }
+                        )
+                        Text(
+                            item.text,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                textDecoration = if (item.done) TextDecoration.LineThrough else TextDecoration.None
+                            ),
+                            color = if (item.done) Color(0xFF78909C) else Color(0xFF1B1F24)
+                        )
+                        val due = item.dueEpochDay
+                        val overdue = due != null && !item.done && due < LocalDate.now().toEpochDay()
+                        Text(
+                            if (due == null) "Set date" else LocalDate.ofEpochDay(due).format(shortFmt),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = when {
+                                due == null -> Color(0xFF90A4AE)
+                                overdue -> Color(0xFFB3261E)
+                                else -> Color(0xFF455A64)
+                            },
+                            modifier = Modifier
+                                .clickable {
+                                    val start = due?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now()
+                                    DatePickerDialog(
+                                        ctx,
+                                        { _, y, m, d ->
+                                            val picked = LocalDate.of(y, m + 1, d).toEpochDay()
+                                            onChange(todos.map { if (it.id == item.id) it.copy(dueEpochDay = picked) else it })
+                                        },
+                                        start.year, start.monthValue - 1, start.dayOfMonth
+                                    ).show()
+                                }
+                                .padding(horizontal = 8.dp, vertical = 12.dp)
+                        )
+                        Text(
+                            "\u2715",
+                            color = Color(0xFF78909C),
+                            modifier = Modifier.clickable { onChange(todos.filter { it.id != item.id }) }.padding(12.dp)
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(24.dp))
     }
 }
 
@@ -422,7 +563,8 @@ fun TripEditor(
                 onClick = {
                     onSave(Trip(id = initial?.id ?: java.util.UUID.randomUUID().toString(),
                         name = name.trim(), epochDay = date.toEpochDay(), endEpochDay = endDate.toEpochDay(),
-                        photoPath = photo, focusX = fx, focusY = fy, zoom = zoom))
+                        photoPath = photo, focusX = fx, focusY = fy, zoom = zoom,
+                        todos = initial?.todos ?: emptyList()))
                 }
             ) { Text("Save") }
         },
