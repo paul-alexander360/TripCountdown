@@ -24,6 +24,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.horizontalScroll
@@ -99,6 +101,7 @@ fun TripApp() {
     var showTodos by remember { mutableStateOf(false) }
     val luggage = remember { mutableStateListOf<Luggage>().apply { addAll(TripStore.loadLuggage(ctx)) } }
     var showLuggage by remember { mutableStateOf(false) }
+    var showPast by remember { mutableStateOf(false) }
     var viewingLuggageId by remember { mutableStateOf<String?>(null) }
     var addingLuggage by remember { mutableStateOf(false) }
     var editingLuggage by remember { mutableStateOf<Luggage?>(null) }
@@ -106,16 +109,19 @@ fun TripApp() {
     fun persist() = TripStore.save(ctx, trips.toList())
     fun persistLuggage() = TripStore.saveLuggage(ctx, luggage.toList())
 
-    val sorted = trips.sortedBy { it.epochDay }
+    val today = LocalDate.now().toEpochDay()
+    val sorted = trips.filter { it.endEpochDay >= today }.sortedBy { it.epochDay }
+    val pastTrips = trips.filter { it.endEpochDay < today }.sortedByDescending { it.epochDay }
 
     val viewing = trips.find { it.id == viewingId }
     val viewingBag = luggage.find { it.id == viewingLuggageId }
-    BackHandler(enabled = viewing != null || showLuggage) {
+    BackHandler(enabled = viewing != null || showLuggage || showPast) {
         when {
             viewingBag != null -> viewingLuggageId = null
             showLuggage -> showLuggage = false
             showTodos -> showTodos = false
-            else -> viewingId = null
+            viewing != null -> viewingId = null
+            else -> showPast = false
         }
     }
 
@@ -191,35 +197,33 @@ fun TripApp() {
                 viewingId = null
             }
         )
+    } else if (showPast) {
+        PastTrips(
+            trips = pastTrips,
+            onBack = { showPast = false },
+            onOpen = { viewingId = it.id; showTodos = false }
+        )
     } else {
-    Scaffold(
-        containerColor = Color(0xFFE8EEF4),
-        floatingActionButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ExtendedFloatingActionButton(onClick = { showLuggage = true }) { Text("Luggage") }
-                ExtendedFloatingActionButton(onClick = { adding = true }) { Text("+ Trip") }
-            }
+    Column(Modifier.fillMaxSize().background(Color(0xFFE8EEF4))) {
+        AppBar(
+            title = "My Trips",
+            actions = listOf(
+                "Luggage" to { showLuggage = true },
+                "Past trips" to { showPast = true },
+                "+ Trip" to { adding = true }
+            )
+        )
+        if (sorted.isEmpty()) {
+            Text("No upcoming trips. Tap + Trip to add one.", modifier = Modifier.padding(16.dp))
         }
-    ) { pad ->
-        Column(Modifier.padding(pad)) {
-            Spacer(Modifier.height(24.dp))
-            Text("My Trips", style = MaterialTheme.typography.headlineLarge,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
-            Spacer(Modifier.height(4.dp))
-            if (sorted.isEmpty()) {
-                Text("No trips yet. Tap + to add your first one.",
-                    modifier = Modifier.padding(horizontal = 16.dp))
+        LazyColumn(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(sorted, key = { it.id }) { trip ->
+                TripCard(trip) { viewingId = trip.id; showTodos = false }
             }
-            LazyColumn(
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(sorted, key = { it.id }) { trip ->
-                    TripCard(trip) { viewingId = trip.id; showTodos = false }
-                }
-                item { Spacer(Modifier.height(80.dp)) }
-            }
+            item { Spacer(Modifier.height(24.dp)) }
         }
     }
     }
@@ -365,6 +369,84 @@ fun TripCard(trip: Trip, onClick: () -> Unit) {
 }
 
 @Composable
+fun AppBar(
+    title: String,
+    backLabel: String? = null,
+    onBack: (() -> Unit)? = null,
+    actions: List<Pair<String, () -> Unit>> = emptyList()
+) {
+    val segments: List<Pair<String, () -> Unit>> =
+        (if (onBack != null) listOf(("\u2039 " + (backLabel ?: "Back")) to onBack) else emptyList()) + actions
+
+    Column(
+        Modifier
+            .zIndex(1f)
+            .fillMaxWidth()
+            .shadow(8.dp)
+            .background(Color(0xFF1565C0))
+    ) {
+        Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) {
+            Text(
+                title,
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+        }
+        if (segments.isNotEmpty()) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
+                    .height(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White)
+            ) {
+                segments.forEachIndexed { i, (label, click) ->
+                    if (i > 0) {
+                        Box(
+                            Modifier
+                                .width(1.dp)
+                                .fillMaxHeight()
+                                .padding(vertical = 10.dp)
+                                .background(Color(0xFFD0D7DE))
+                        )
+                    }
+                    TextButton(
+                        onClick = click,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        shape = RectangleShape,
+                        contentPadding = PaddingValues(horizontal = 4.dp),
+                        colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF1B1F24))
+                    ) { Text(label, maxLines = 1) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PastTrips(trips: List<Trip>, onBack: () -> Unit, onOpen: (Trip) -> Unit) {
+    Column(Modifier.fillMaxSize().background(Color(0xFFE8EEF4))) {
+        AppBar(title = "Past Trips", backLabel = "Back", onBack = onBack)
+        if (trips.isEmpty()) {
+            Text(
+                "No past trips yet. Trips move here after their end date.",
+                modifier = Modifier.padding(16.dp)
+            )
+        }
+        LazyColumn(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(trips, key = { it.id }) { trip -> TripCard(trip) { onOpen(trip) } }
+            item { Spacer(Modifier.height(24.dp)) }
+        }
+    }
+}
+
+@Composable
 fun TripDetails(
     trip: Trip,
     bags: List<Luggage>,
@@ -374,70 +456,51 @@ fun TripDetails(
     onAttachments: (List<Attachment>) -> Unit,
     onDelete: () -> Unit
 ) {
-    var showTodoNote by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(Color(0xFFE8EEF4))
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
-    ) {
-        TextButton(onClick = onBack) {
-            Text("\u2039 Back to trips", style = MaterialTheme.typography.titleMedium)
-        }
-        Column(Modifier.fillMaxWidth().cardShadow().background(Color.White)) {
-        Box(Modifier.fillMaxWidth().aspectRatio(1.25f)) {
-            TripPhoto(trip.photoPath, Modifier.fillMaxSize(), trip.focusX, trip.focusY, trip.zoom)
-            Column(
-                Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
-            ) {
-                ShadowText(trip.name, MaterialTheme.typography.headlineMedium)
-                ShadowText(dateRange(trip), MaterialTheme.typography.bodyLarge)
-                ShadowText(countdown(trip), MaterialTheme.typography.titleMedium)
+    Column(Modifier.fillMaxSize().background(Color(0xFFE8EEF4))) {
+        AppBar(
+            title = "Trip Details",
+            backLabel = "Back",
+            onBack = onBack,
+            actions = listOf("To-do list" to onTodos, "Edit trip" to onEdit)
+        )
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            Column(Modifier.fillMaxWidth().cardShadow().background(Color.White)) {
+                Box(Modifier.fillMaxWidth().aspectRatio(1.25f)) {
+                    TripPhoto(trip.photoPath, Modifier.fillMaxSize(), trip.focusX, trip.focusY, trip.zoom)
+                    Column(
+                        Modifier
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
+                    ) {
+                        ShadowText(trip.name, MaterialTheme.typography.headlineMedium)
+                        ShadowText(dateRange(trip), MaterialTheme.typography.bodyLarge)
+                        ShadowText(countdown(trip), MaterialTheme.typography.titleMedium)
+                    }
+                }
+                TodoSummary(trip.todos)
+                TicketsSection("Tickets", listOf("Airline ticket", "Luggage claim ticket", "Other"), trip.attachments, onAttachments)
+                LuggageStrip(bags)
             }
-        }
-        TodoSummary(trip.todos)
-        TicketsSection("Tickets", listOf("Airline ticket", "Luggage claim ticket", "Other"), trip.attachments, onAttachments)
-        LuggageStrip(bags)
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FieldButton(
-                onClick = onTodos,
-                modifier = Modifier.weight(1f).height(56.dp),
-                contentPadding = PaddingValues(horizontal = 4.dp)
-            ) { Text("To-do list", maxLines = 1) }
-            FieldButton(
-                onClick = onEdit,
-                modifier = Modifier.weight(1f).height(56.dp),
-                contentPadding = PaddingValues(horizontal = 4.dp)
-            ) { Text("Edit trip", maxLines = 1) }
-            FieldButton(
-                onClick = { confirmDelete = true },
-                modifier = Modifier.weight(1f).height(56.dp),
-                contentPadding = PaddingValues(horizontal = 4.dp)
-            ) { Text("Delete trip", maxLines = 1, color = MaterialTheme.colorScheme.error) }
+            FieldButton(onClick = { confirmDelete = true }) {
+                Text("Delete trip", color = MaterialTheme.colorScheme.error)
+            }
         }
     }
 
-    if (showTodoNote) {
-        AlertDialog(
-            onDismissRequest = { showTodoNote = false },
-            title = { Text("To-do list") },
-            text = { Text("To-do lists are coming soon.") },
-            confirmButton = { TextButton(onClick = { showTodoNote = false }) { Text("OK") } }
-        )
-    }
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
             title = { Text("Delete this trip?") },
-            text = { Text("This will remove ${trip.name} and its photo. It can't be undone.") },
+            text = { Text("This will remove ${trip.name}, its photo, and its ticket images. It can't be undone.") },
             confirmButton = {
                 TextButton(onClick = { confirmDelete = false; onDelete() }) {
                     Text("Delete", color = MaterialTheme.colorScheme.error)
@@ -687,17 +750,15 @@ fun TodoScreen(trip: Trip, onBack: () -> Unit, onChange: (List<TodoItem>) -> Uni
 
     val doneCount = todos.count { it.done }
 
+    Column(Modifier.fillMaxSize().background(Color(0xFFE8EEF4))) {
+    AppBar(title = "To-do list", backLabel = "Back", onBack = onBack)
     Column(
         Modifier
-            .fillMaxSize()
-            .background(Color(0xFFE8EEF4))
+            .weight(1f)
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        TextButton(onClick = onBack) {
-            Text("\u2039 Back to trip", style = MaterialTheme.typography.titleMedium)
-        }
         Column {
             Text(trip.name, style = MaterialTheme.typography.headlineMedium)
             Text(
@@ -791,6 +852,7 @@ fun TodoScreen(trip: Trip, onBack: () -> Unit, onChange: (List<TodoItem>) -> Uni
         }
         Spacer(Modifier.height(24.dp))
     }
+    }
 }
 
 private fun tripCountText(n: Int): String = when (n) {
@@ -872,38 +934,27 @@ fun LuggageList(
     onAdd: () -> Unit,
     onOpen: (Luggage) -> Unit
 ) {
-    Scaffold(
-        containerColor = Color(0xFFE8EEF4),
-        floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = onAdd) { Text("+ Add luggage") }
-        }
-    ) { pad ->
-        Column(Modifier.padding(pad)) {
-            TextButton(onClick = onBack, modifier = Modifier.padding(start = 8.dp, top = 8.dp)) {
-                Text("\u2039 Back to trips", style = MaterialTheme.typography.titleMedium)
-            }
+    Column(Modifier.fillMaxSize().background(Color(0xFFE8EEF4))) {
+        AppBar(
+            title = "My Luggage",
+            backLabel = "Back",
+            onBack = onBack,
+            actions = listOf("+ Add luggage" to onAdd)
+        )
+        if (bags.isEmpty()) {
             Text(
-                "My Luggage",
-                style = MaterialTheme.typography.headlineLarge,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                "No luggage yet. Tap + Add luggage to save your first bag.",
+                modifier = Modifier.padding(16.dp)
             )
-            Spacer(Modifier.height(4.dp))
-            if (bags.isEmpty()) {
-                Text(
-                    "No luggage yet. Tap + Add luggage to save your first bag.",
-                    modifier = Modifier.padding(16.dp)
-                )
+        }
+        LazyColumn(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(bags, key = { it.id }) { bag ->
+                LuggageCard(bag, tripCount(bag)) { onOpen(bag) }
             }
-            LazyColumn(
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(bags, key = { it.id }) { bag ->
-                    LuggageCard(bag, tripCount(bag)) { onOpen(bag) }
-                }
-                item { Spacer(Modifier.height(80.dp)) }
-            }
+            item { Spacer(Modifier.height(24.dp)) }
         }
     }
 }
@@ -920,69 +971,64 @@ fun LuggageDetails(
     var confirmDelete by remember { mutableStateOf(false) }
     val tagLabels = listOf("Baggage claim tag") + tripsForBag.map { "Tag: " + it.name }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(Color(0xFFE8EEF4))
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
-    ) {
-        TextButton(onClick = onBack) {
-            Text("\u2039 Back to luggage", style = MaterialTheme.typography.titleMedium)
-        }
-        Column(Modifier.fillMaxWidth().cardShadow().background(Color.White)) {
-            Box(Modifier.fillMaxWidth().aspectRatio(1.25f)) {
-                TripPhoto(bag.photoPath, Modifier.fillMaxSize(), bag.focusX, bag.focusY, bag.zoom)
-                Column(
-                    Modifier
-                        .align(Alignment.BottomStart)
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
-                ) {
-                    ShadowText(bag.name, MaterialTheme.typography.headlineMedium)
-                    ShadowText(tripCountText(tripsForBag.size), MaterialTheme.typography.titleMedium)
+    Column(Modifier.fillMaxSize().background(Color(0xFFE8EEF4))) {
+        AppBar(
+            title = "Luggage Details",
+            backLabel = "Back",
+            onBack = onBack,
+            actions = listOf("Edit luggage" to onEdit)
+        )
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            Column(Modifier.fillMaxWidth().cardShadow().background(Color.White)) {
+                Box(Modifier.fillMaxWidth().aspectRatio(1.25f)) {
+                    TripPhoto(bag.photoPath, Modifier.fillMaxSize(), bag.focusX, bag.focusY, bag.zoom)
+                    Column(
+                        Modifier
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
+                    ) {
+                        ShadowText(bag.name, MaterialTheme.typography.headlineMedium)
+                        ShadowText(tripCountText(tripsForBag.size), MaterialTheme.typography.titleMedium)
+                    }
                 }
-            }
-            Text(
-                "Trips",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 8.dp)
-            )
-            if (tripsForBag.isEmpty()) {
                 Text(
-                    "Not on any trip yet. Add it from a trip's Edit screen.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF78909C),
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
+                    "Trips",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 8.dp)
                 )
-            }
-            tripsForBag.forEach { t ->
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .height(1.dp)
-                        .background(Color(0xFFE0E6EB))
-                )
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
-                    Text(t.name, style = MaterialTheme.typography.bodyLarge)
-                    Text(dateRange(t), style = MaterialTheme.typography.bodyMedium, color = Color(0xFF455A64))
+                if (tripsForBag.isEmpty()) {
+                    Text(
+                        "Not on any trip yet. Add it from a trip's Edit screen.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF78909C),
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
+                    )
                 }
+                tripsForBag.forEach { t ->
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            .height(1.dp)
+                            .background(Color(0xFFE0E6EB))
+                    )
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                        Text(t.name, style = MaterialTheme.typography.bodyLarge)
+                        Text(dateRange(t), style = MaterialTheme.typography.bodyMedium, color = Color(0xFF455A64))
+                    }
+                }
+                TicketsSection("Baggage claim tags", tagLabels, bag.tags, onTags)
             }
-            TicketsSection("Baggage claim tags", tagLabels, bag.tags, onTags)
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FieldButton(
-                onClick = onEdit,
-                modifier = Modifier.weight(1f).height(56.dp),
-                contentPadding = PaddingValues(horizontal = 4.dp)
-            ) { Text("Edit luggage", maxLines = 1) }
-            FieldButton(
-                onClick = { confirmDelete = true },
-                modifier = Modifier.weight(1f).height(56.dp),
-                contentPadding = PaddingValues(horizontal = 4.dp)
-            ) { Text("Delete luggage", maxLines = 1, color = MaterialTheme.colorScheme.error) }
+            FieldButton(onClick = { confirmDelete = true }) {
+                Text("Delete luggage", color = MaterialTheme.colorScheme.error)
+            }
         }
     }
 
