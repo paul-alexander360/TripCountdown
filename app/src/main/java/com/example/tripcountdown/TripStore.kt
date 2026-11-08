@@ -22,6 +22,16 @@ data class Attachment(
     val path: String
 )
 
+data class Luggage(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val photoPath: String? = null,
+    val focusX: Float = 0.5f,
+    val focusY: Float = 0.5f,
+    val zoom: Float = 1f,
+    val tags: List<Attachment> = emptyList()
+)
+
 data class Trip(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
@@ -32,11 +42,17 @@ data class Trip(
     val focusY: Float = 0.5f,
     val zoom: Float = 1f,
     val todos: List<TodoItem> = emptyList(),
-    val attachments: List<Attachment> = emptyList()
+    val attachments: List<Attachment> = emptyList(),
+    val luggageIds: List<String> = emptyList()
 )
 
 object TripStore {
     private fun file(ctx: Context) = File(ctx.filesDir, "trips.json")
+
+    private fun readStrings(arr: JSONArray?): List<String> {
+        if (arr == null) return emptyList()
+        return (0 until arr.length()).map { arr.getString(it) }
+    }
 
     private fun readAttachments(arr: JSONArray?): List<Attachment> {
         if (arr == null) return emptyList()
@@ -74,7 +90,8 @@ object TripStore {
                     focusY = o.optDouble("focusY", 0.5).toFloat(),
                     zoom = o.optDouble("zoom", 1.0).toFloat(),
                     todos = readTodos(o.optJSONArray("todos")),
-                    attachments = readAttachments(o.optJSONArray("attachments"))
+                    attachments = readAttachments(o.optJSONArray("attachments")),
+                    luggageIds = readStrings(o.optJSONArray("luggageIds"))
                 )
             }
         } catch (e: Exception) {
@@ -94,6 +111,7 @@ object TripStore {
                 put("focusX", it.focusX.toDouble())
                 put("focusY", it.focusY.toDouble())
                 put("zoom", it.zoom.toDouble())
+                put("luggageIds", JSONArray(it.luggageIds))
                 put("attachments", JSONArray().also { list ->
                     it.attachments.forEach { a ->
                         list.put(JSONObject().apply {
@@ -116,6 +134,54 @@ object TripStore {
             })
         }
         file(ctx).writeText(arr.toString())
+    }
+
+    private fun luggageFile(ctx: Context) = File(ctx.filesDir, "luggage.json")
+
+    fun loadLuggage(ctx: Context): List<Luggage> {
+        val f = luggageFile(ctx)
+        if (!f.exists()) return emptyList()
+        return try {
+            val arr = JSONArray(f.readText())
+            (0 until arr.length()).map {
+                val o = arr.getJSONObject(it)
+                Luggage(
+                    id = o.getString("id"),
+                    name = o.getString("name"),
+                    photoPath = if (o.isNull("photoPath")) null else o.getString("photoPath"),
+                    focusX = o.optDouble("focusX", 0.5).toFloat(),
+                    focusY = o.optDouble("focusY", 0.5).toFloat(),
+                    zoom = o.optDouble("zoom", 1.0).toFloat(),
+                    tags = readAttachments(o.optJSONArray("tags"))
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun saveLuggage(ctx: Context, items: List<Luggage>) {
+        val arr = JSONArray()
+        items.forEach { b ->
+            arr.put(JSONObject().apply {
+                put("id", b.id)
+                put("name", b.name)
+                put("photoPath", b.photoPath ?: JSONObject.NULL)
+                put("focusX", b.focusX.toDouble())
+                put("focusY", b.focusY.toDouble())
+                put("zoom", b.zoom.toDouble())
+                put("tags", JSONArray().also { list ->
+                    b.tags.forEach { a ->
+                        list.put(JSONObject().apply {
+                            put("id", a.id)
+                            put("label", a.label)
+                            put("path", a.path)
+                        })
+                    }
+                })
+            })
+        }
+        luggageFile(ctx).writeText(arr.toString())
     }
 
     /** Copies the chosen photo into the app's private storage, shrunk to max 1080px. */
