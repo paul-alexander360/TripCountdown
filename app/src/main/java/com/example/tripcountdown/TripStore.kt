@@ -9,6 +9,13 @@ import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 
+data class TodoItem(
+    val id: String = UUID.randomUUID().toString(),
+    val text: String,
+    val done: Boolean = false,
+    val dueEpochDay: Long? = null
+)
+
 data class Trip(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
@@ -17,11 +24,23 @@ data class Trip(
     val photoPath: String? = null,
     val focusX: Float = 0.5f,
     val focusY: Float = 0.5f,
-    val zoom: Float = 1f
+    val zoom: Float = 1f,
+    val todos: List<TodoItem> = emptyList()
 )
 
 object TripStore {
     private fun file(ctx: Context) = File(ctx.filesDir, "trips.json")
+
+    private fun readTodos(arr: JSONArray?): List<TodoItem> {
+        if (arr == null) return emptyList()
+        return (0 until arr.length()).map {
+            val o = arr.getJSONObject(it)
+            TodoItem(
+                o.getString("id"), o.getString("text"), o.optBoolean("done", false),
+                if (o.has("dueEpochDay")) o.getLong("dueEpochDay") else null
+            )
+        }
+    }
 
     fun load(ctx: Context): List<Trip> {
         val f = file(ctx)
@@ -38,7 +57,8 @@ object TripStore {
                     photoPath = if (o.isNull("photoPath")) null else o.getString("photoPath"),
                     focusX = o.optDouble("focusX", 0.5).toFloat(),
                     focusY = o.optDouble("focusY", 0.5).toFloat(),
-                    zoom = o.optDouble("zoom", 1.0).toFloat()
+                    zoom = o.optDouble("zoom", 1.0).toFloat(),
+                    todos = readTodos(o.optJSONArray("todos"))
                 )
             }
         } catch (e: Exception) {
@@ -58,6 +78,16 @@ object TripStore {
                 put("focusX", it.focusX.toDouble())
                 put("focusY", it.focusY.toDouble())
                 put("zoom", it.zoom.toDouble())
+                put("todos", JSONArray().also { list ->
+                    it.todos.forEach { t ->
+                        list.put(JSONObject().apply {
+                            put("id", t.id)
+                            put("text", t.text)
+                            put("done", t.done)
+                            t.dueEpochDay?.let { d -> put("dueEpochDay", d) }
+                        })
+                    }
+                })
             })
         }
         file(ctx).writeText(arr.toString())
