@@ -174,6 +174,23 @@ fun TripPhoto(path: String?, modifier: Modifier, fx: Float = 0.5f, fy: Float = 0
 
 private val textShadow = Shadow(color = Color.Black, offset = Offset(6f, 6f), blurRadius = 6f)
 
+private val cardShape = RoundedCornerShape(12.dp)
+
+fun Modifier.cardShadow(): Modifier = this
+    .shadow(16.dp, cardShape, ambientColor = Color.Black, spotColor = Color.Black)
+    .shadow(8.dp, cardShape, ambientColor = Color.Black, spotColor = Color.Black)
+
+@Composable
+fun FieldButton(onClick: () -> Unit, content: @Composable RowScope.() -> Unit) {
+    Button(
+        onClick = onClick,
+        shape = cardShape,
+        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF1B1F24)),
+        modifier = Modifier.fillMaxWidth().cardShadow(),
+        content = content
+    )
+}
+
 @Composable
 fun ShadowText(text: String, style: TextStyle) {
     Box {
@@ -186,7 +203,7 @@ fun TripCard(trip: Trip, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(10.dp, RoundedCornerShape(12.dp), ambientColor = Color.Black, spotColor = Color.Black)
+            .cardShadow()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -243,25 +260,37 @@ fun TripEditor(
     }
 
     AlertDialog(
+        containerColor = Color(0xFFE8EEF4),
         onDismissRequest = onDismiss,
         title = { Text(if (initial == null) "New trip" else "Edit trip") },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text("Trip name") }, singleLine = true)
-                OutlinedButton(onClick = {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                TextField(
+                    name, { name = it },
+                    label = { Text("Trip name") }, singleLine = true,
+                    shape = cardShape,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    ),
+                    modifier = Modifier.fillMaxWidth().cardShadow()
+                )
+                FieldButton(onClick = {
                     DatePickerDialog(ctx, { _, y, m, d ->
                         val len = ChronoUnit.DAYS.between(date, endDate)
                         date = LocalDate.of(y, m + 1, d)
                         endDate = date.plusDays(len)
                     }, date.year, date.monthValue - 1, date.dayOfMonth).show()
                 }) { Text("Starts: " + date.format(dateFmt)) }
-                OutlinedButton(onClick = {
+                FieldButton(onClick = {
                     DatePickerDialog(ctx, { _, y, m, d -> endDate = LocalDate.of(y, m + 1, d) },
                         endDate.year, endDate.monthValue - 1, endDate.dayOfMonth).also {
                         it.datePicker.minDate = date.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
                     }.show()
                 }) { Text("Ends: " + endDate.format(dateFmt)) }
-                val previewMod = Modifier.fillMaxWidth().aspectRatio(cardAspect).clip(RoundedCornerShape(8.dp))
+                val previewMod = Modifier.fillMaxWidth().aspectRatio(cardAspect).cardShadow()
                 if (photo != null && dims != null && dims.first > 0 && dims.second > 0) {
                     TripPhoto(
                         photo,
@@ -283,11 +312,11 @@ fun TripEditor(
                 } else {
                     TripPhoto(photo, previewMod)
                 }
-                OutlinedButton(onClick = {
+                FieldButton(onClick = {
                     picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }) { Text(if (photo == null) "Choose photo" else "Change photo") }
                 if (onDelete != null) {
-                    TextButton(onClick = onDelete) { Text("Delete trip", color = MaterialTheme.colorScheme.error) }
+                    FieldButton(onClick = onDelete) { Text("Delete trip", color = MaterialTheme.colorScheme.error) }
                 }
             }
         },
