@@ -262,6 +262,12 @@ fun TripCard(trip: Trip, onClick: () -> Unit) {
                 ShadowText(trip.name, MaterialTheme.typography.titleLarge)
                 ShadowText(dateRange(trip), MaterialTheme.typography.bodyLarge)
                 ShadowText(countdown(trip), MaterialTheme.typography.titleMedium)
+                if (trip.todos.isNotEmpty()) {
+                    ShadowText(
+                        "To-do: ${trip.todos.count { it.done }} of ${trip.todos.size} done",
+                        MaterialTheme.typography.bodyLarge
+                    )
+                }
             }
         }
     }
@@ -283,7 +289,8 @@ fun TripDetails(trip: Trip, onBack: () -> Unit, onEdit: () -> Unit, onTodos: () 
         TextButton(onClick = onBack) {
             Text("\u2039 Back to trips", style = MaterialTheme.typography.titleMedium)
         }
-        Box(Modifier.fillMaxWidth().aspectRatio(1.25f).cardShadow()) {
+        Column(Modifier.fillMaxWidth().cardShadow().background(Color.White)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1.25f)) {
             TripPhoto(trip.photoPath, Modifier.fillMaxSize(), trip.focusX, trip.focusY, trip.zoom)
             Column(
                 Modifier
@@ -295,6 +302,8 @@ fun TripDetails(trip: Trip, onBack: () -> Unit, onEdit: () -> Unit, onTodos: () 
                 ShadowText(dateRange(trip), MaterialTheme.typography.bodyLarge)
                 ShadowText(countdown(trip), MaterialTheme.typography.titleMedium)
             }
+        }
+        TodoSummary(trip.todos)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             FieldButton(
@@ -335,6 +344,66 @@ fun TripDetails(trip: Trip, onBack: () -> Unit, onEdit: () -> Unit, onTodos: () 
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } }
         )
+    }
+}
+
+@Composable
+fun TodoSummary(todos: List<TodoItem>) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("To-do list", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            if (todos.isNotEmpty()) {
+                Text(
+                    "${todos.count { it.done }} of ${todos.size} done",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF455A64)
+                )
+            }
+        }
+        if (todos.isEmpty()) {
+            Text(
+                "No to-dos yet. Tap the To-do list button to add some.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF78909C),
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
+            )
+        }
+        todos.forEach { item ->
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .height(1.dp)
+                    .background(Color(0xFFE0E6EB))
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 2.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(checked = item.done, onCheckedChange = null, modifier = Modifier.padding(12.dp))
+                Text(
+                    item.text,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        textDecoration = if (item.done) TextDecoration.LineThrough else TextDecoration.None
+                    ),
+                    color = if (item.done) Color(0xFF78909C) else Color(0xFF1B1F24)
+                )
+                val due = item.dueEpochDay
+                if (due != null) {
+                    val overdue = !item.done && due < LocalDate.now().toEpochDay()
+                    Text(
+                        LocalDate.ofEpochDay(due).format(shortFmt),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (overdue) Color(0xFFB3261E) else Color(0xFF455A64),
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+            }
+        }
     }
 }
 
