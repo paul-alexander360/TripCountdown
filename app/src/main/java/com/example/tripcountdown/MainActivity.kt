@@ -8,7 +8,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -138,11 +145,28 @@ fun TripApp() {
     }
 }
 
+fun cropRect(bw: Int, bh: Int, dw: Float, dh: Float, fx: Float, fy: Float, zoom: Float): Rect {
+    val scale = maxOf(dw / bw, dh / bh) * zoom
+    val sw = dw / scale
+    val sh = dh / scale
+    val left = (bw - sw).coerceAtLeast(0f) * fx.coerceIn(0f, 1f)
+    val top = (bh - sh).coerceAtLeast(0f) * fy.coerceIn(0f, 1f)
+    return Rect(left, top, left + sw, top + sh)
+}
+
 @Composable
-fun TripPhoto(path: String?, modifier: Modifier) {
+fun TripPhoto(path: String?, modifier: Modifier, fx: Float = 0.5f, fy: Float = 0.5f, zoom: Float = 1f) {
     val bmp = remember(path) { path?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() } }
     if (bmp != null) {
-        Image(bmp, contentDescription = null, contentScale = ContentScale.Crop, modifier = modifier)
+        Canvas(modifier) {
+            val r = cropRect(bmp.width, bmp.height, size.width, size.height, fx, fy, zoom)
+            drawImage(
+                bmp,
+                srcOffset = IntOffset(r.left.toInt(), r.top.toInt()),
+                srcSize = IntSize(r.width.toInt(), r.height.toInt()),
+                dstSize = IntSize(size.width.toInt(), size.height.toInt())
+            )
+        }
     } else {
         Box(modifier.background(Color(0xFFCFD8DC)), contentAlignment = Alignment.Center) { Text("No photo") }
     }
@@ -167,7 +191,7 @@ fun TripCard(trip: Trip, onClick: () -> Unit) {
         shape = RoundedCornerShape(12.dp)
     ) {
         Box(Modifier.fillMaxWidth().height(200.dp)) {
-            TripPhoto(trip.photoPath, Modifier.fillMaxSize())
+            TripPhoto(trip.photoPath, Modifier.fillMaxSize(), trip.focusX, trip.focusY, trip.zoom)
             Column(
                 Modifier
                     .align(Alignment.BottomStart)
@@ -198,11 +222,23 @@ fun TripEditor(
         mutableStateOf(initial?.let { LocalDate.ofEpochDay(it.endEpochDay) } ?: LocalDate.now().plusDays(36))
     }
     var photo by remember { mutableStateOf(initial?.photoPath) }
+    var fx by remember { mutableStateOf(initial?.focusX ?: 0.5f) }
+    var fy by remember { mutableStateOf(initial?.focusY ?: 0.5f) }
+    var zoom by remember { mutableStateOf(initial?.zoom ?: 1f) }
+    val cardAspect = (LocalConfiguration.current.screenWidthDp - 32f) / 200f
+    val dims = remember(photo) {
+        photo?.let { p ->
+            val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(p, o)
+            Pair(o.outWidth, o.outHeight)
+        }
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) TripStore.importPhoto(ctx, uri)?.let { newPath ->
             if (photo != null && photo != initial?.photoPath) TripStore.deletePhoto(photo)
             photo = newPath
+            fx = 0.5f; fy = 0.5f; zoom = 1f
         }
     }
 
@@ -225,7 +261,28 @@ fun TripEditor(
                         it.datePicker.minDate = date.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
                     }.show()
                 }) { Text("Ends: " + endDate.format(dateFmt)) }
-                TripPhoto(photo, Modifier.fillMaxWidth().height(130.dp).clip(RoundedCornerShape(8.dp)))
+                val previewMod = Modifier.fillMaxWidth().aspectRatio(cardAspect).clip(RoundedCornerShape(8.dp))
+                if (photo != null && dims != null && dims.first > 0 && dims.second > 0) {
+                    TripPhoto(
+                        photo,
+                        previewMod.pointerInput(photo) {
+                            detectTransformGestures { _, pan, gz, _ ->
+                                val bw = dims.first.toFloat()
+                                val bh = dims.second.toFloat()
+                                zoom = (zoom * gz).coerceIn(1f, 5f)
+                                val scale = maxOf(size.width / bw, size.height / bh) * zoom
+                                val rx = bw - size.width / scale
+                                val ry = bh - size.height / scale
+                                if (rx > 0f) fx = (fx - pan.x / scale / rx).coerceIn(0f, 1f)
+                                if (ry > 0f) fy = (fy - pan.y / scale / ry).coerceIn(0f, 1f)
+                            }
+                        },
+                        fx, fy, zoom
+                    )
+                    Text("Drag to move the photo, pinch to zoom", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    TripPhoto(photo, previewMod)
+                }
                 OutlinedButton(onClick = {
                     picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }) { Text(if (photo == null) "Choose photo" else "Change photo") }
@@ -237,8 +294,11 @@ fun TripEditor(
         confirmButton = {
             TextButton(
                 enabled = name.isNotBlank(),
-                onClick = { onSave(Trip(id = initial?.id ?: java.util.UUID.randomUUID().toString(),
-                    name = name.trim(), epochDay = date.toEpochDay(), endEpochDay = endDate.toEpochDay(), photoPath = photo)) }
+                onClick = {
+                    onSave(Trip(id = initial?.id ?: java.util.UUID.randomUUID().toString(),
+                        name = name.trim(), epochDay = date.toEpochDay(), endEpochDay = endDate.toEpochDay(),
+                        photoPath = photo, focusX = fx, focusY = fy, zoom = zoom))
+                }
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
