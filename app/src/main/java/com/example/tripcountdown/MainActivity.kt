@@ -22,10 +22,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -82,18 +84,25 @@ fun TripApp() {
     val sorted = trips.sortedBy { it.epochDay }
 
     Scaffold(
+        containerColor = Color(0xFFE8EEF4),
         floatingActionButton = {
             FloatingActionButton(onClick = { adding = true }) { Text("+", style = MaterialTheme.typography.headlineMedium) }
         }
     ) { pad ->
-        Column(Modifier.padding(pad).padding(horizontal = 16.dp)) {
+        Column(Modifier.padding(pad)) {
             Spacer(Modifier.height(24.dp))
-            Text("My Trips", style = MaterialTheme.typography.headlineLarge)
-            Spacer(Modifier.height(12.dp))
+            Text("My Trips", style = MaterialTheme.typography.headlineLarge,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+            Spacer(Modifier.height(4.dp))
             if (sorted.isEmpty()) {
-                Text("No trips yet. Tap + to add your first one.")
+                Text("No trips yet. Tap + to add your first one.",
+                    modifier = Modifier.padding(horizontal = 16.dp))
             }
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            LazyColumn(
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 items(sorted, key = { it.id }) { trip ->
                     TripCard(trip) { editing = trip }
                 }
@@ -150,7 +159,13 @@ fun ShadowText(text: String, style: TextStyle) {
 
 @Composable
 fun TripCard(trip: Trip, onClick: () -> Unit) {
-    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(10.dp, RoundedCornerShape(12.dp), ambientColor = Color.Black, spotColor = Color.Black)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp)
+    ) {
         Box(Modifier.fillMaxWidth().height(200.dp)) {
             TripPhoto(trip.photoPath, Modifier.fillMaxSize())
             Column(
