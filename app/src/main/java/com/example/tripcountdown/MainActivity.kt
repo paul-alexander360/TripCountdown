@@ -5,6 +5,8 @@ import android.graphics.BitmapFactory
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.glance.appwidget.updateAll
+import kotlinx.coroutines.launch
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
@@ -69,7 +71,7 @@ private val dateFmt = DateTimeFormatter.ofPattern("EEE, MMM d, yyyy")
 private val shortFmt = DateTimeFormatter.ofPattern("MMM d")
 private val longFmt = DateTimeFormatter.ofPattern("MMM d, yyyy")
 
-private fun dateRange(t: Trip): String {
+fun dateRange(t: Trip): String {
     val s = LocalDate.ofEpochDay(t.epochDay)
     val e = LocalDate.ofEpochDay(t.endEpochDay)
     val days = t.endEpochDay - t.epochDay + 1
@@ -78,7 +80,7 @@ private fun dateRange(t: Trip): String {
     return "$first \u2013 ${e.format(longFmt)} ($days days)"
 }
 
-private fun countdown(t: Trip): String {
+fun countdown(t: Trip): String {
     val today = LocalDate.now().toEpochDay()
     val d = t.epochDay - today
     return when {
@@ -95,7 +97,9 @@ private fun countdown(t: Trip): String {
 @Composable
 fun TripApp() {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     val trips = remember { mutableStateListOf<Trip>().apply { addAll(TripStore.load(ctx)) } }
+    LaunchedEffect(Unit) { TripWidget().updateAll(ctx) }
     var editing by remember { mutableStateOf<Trip?>(null) }
     var adding by remember { mutableStateOf(false) }
     var viewingId by remember { mutableStateOf<String?>(null) }
@@ -107,7 +111,10 @@ fun TripApp() {
     var addingLuggage by remember { mutableStateOf(false) }
     var editingLuggage by remember { mutableStateOf<Luggage?>(null) }
 
-    fun persist() = TripStore.save(ctx, trips.toList())
+    fun persist() {
+        TripStore.save(ctx, trips.toList())
+        scope.launch { TripWidget().updateAll(ctx) }
+    }
     fun persistLuggage() = TripStore.saveLuggage(ctx, luggage.toList())
 
     val today = LocalDate.now().toEpochDay()
