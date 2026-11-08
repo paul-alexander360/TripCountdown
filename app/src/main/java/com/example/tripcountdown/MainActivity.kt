@@ -4,6 +4,7 @@ import android.app.DatePickerDialog
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
@@ -85,11 +86,28 @@ fun TripApp() {
     val trips = remember { mutableStateListOf<Trip>().apply { addAll(TripStore.load(ctx)) } }
     var editing by remember { mutableStateOf<Trip?>(null) }
     var adding by remember { mutableStateOf(false) }
+    var viewingId by remember { mutableStateOf<String?>(null) }
 
     fun persist() = TripStore.save(ctx, trips.toList())
 
     val sorted = trips.sortedBy { it.epochDay }
 
+    val viewing = trips.find { it.id == viewingId }
+    BackHandler(enabled = viewing != null) { viewingId = null }
+
+    if (viewing != null) {
+        TripDetails(
+            trip = viewing,
+            onBack = { viewingId = null },
+            onEdit = { editing = viewing },
+            onDelete = {
+                TripStore.deletePhoto(viewing.photoPath)
+                trips.removeAll { it.id == viewing.id }
+                persist()
+                viewingId = null
+            }
+        )
+    } else {
     Scaffold(
         containerColor = Color(0xFFE8EEF4),
         floatingActionButton = {
@@ -111,11 +129,12 @@ fun TripApp() {
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(sorted, key = { it.id }) { trip ->
-                    TripCard(trip) { editing = trip }
+                    TripCard(trip) { viewingId = trip.id }
                 }
                 item { Spacer(Modifier.height(80.dp)) }
             }
         }
+    }
     }
 
     if (adding) {
@@ -181,12 +200,18 @@ fun Modifier.cardShadow(): Modifier = this
     .shadow(8.dp, cardShape, ambientColor = Color.Black, spotColor = Color.Black)
 
 @Composable
-fun FieldButton(onClick: () -> Unit, content: @Composable RowScope.() -> Unit) {
+fun FieldButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+    content: @Composable RowScope.() -> Unit
+) {
     Button(
         onClick = onClick,
         shape = cardShape,
         colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF1B1F24)),
-        modifier = Modifier.fillMaxWidth().cardShadow(),
+        modifier = modifier.cardShadow(),
+        contentPadding = contentPadding,
         content = content
     )
 }
@@ -220,6 +245,77 @@ fun TripCard(trip: Trip, onClick: () -> Unit) {
                 ShadowText(countdown(trip), MaterialTheme.typography.titleMedium)
             }
         }
+    }
+}
+
+@Composable
+fun TripDetails(trip: Trip, onBack: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
+    var showTodoNote by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xFFE8EEF4))
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        TextButton(onClick = onBack) {
+            Text("\u2039 Back to trips", style = MaterialTheme.typography.titleMedium)
+        }
+        Box(Modifier.fillMaxWidth().aspectRatio(1.25f).cardShadow()) {
+            TripPhoto(trip.photoPath, Modifier.fillMaxSize(), trip.focusX, trip.focusY, trip.zoom)
+            Column(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
+            ) {
+                ShadowText(trip.name, MaterialTheme.typography.headlineMedium)
+                ShadowText(dateRange(trip), MaterialTheme.typography.bodyLarge)
+                ShadowText(countdown(trip), MaterialTheme.typography.titleMedium)
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FieldButton(
+                onClick = { showTodoNote = true },
+                modifier = Modifier.weight(1f).height(56.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp)
+            ) { Text("To-do list", maxLines = 1) }
+            FieldButton(
+                onClick = onEdit,
+                modifier = Modifier.weight(1f).height(56.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp)
+            ) { Text("Edit trip", maxLines = 1) }
+            FieldButton(
+                onClick = { confirmDelete = true },
+                modifier = Modifier.weight(1f).height(56.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp)
+            ) { Text("Delete trip", maxLines = 1, color = MaterialTheme.colorScheme.error) }
+        }
+    }
+
+    if (showTodoNote) {
+        AlertDialog(
+            onDismissRequest = { showTodoNote = false },
+            title = { Text("To-do list") },
+            text = { Text("To-do lists are coming soon.") },
+            confirmButton = { TextButton(onClick = { showTodoNote = false }) { Text("OK") } }
+        )
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete this trip?") },
+            text = { Text("This will remove ${trip.name} and its photo. It can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = { confirmDelete = false; onDelete() }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } }
+        )
     }
 }
 
