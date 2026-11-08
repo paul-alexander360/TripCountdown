@@ -97,15 +97,67 @@ fun TripApp() {
     var adding by remember { mutableStateOf(false) }
     var viewingId by remember { mutableStateOf<String?>(null) }
     var showTodos by remember { mutableStateOf(false) }
+    val luggage = remember { mutableStateListOf<Luggage>().apply { addAll(TripStore.loadLuggage(ctx)) } }
+    var showLuggage by remember { mutableStateOf(false) }
+    var viewingLuggageId by remember { mutableStateOf<String?>(null) }
+    var addingLuggage by remember { mutableStateOf(false) }
+    var editingLuggage by remember { mutableStateOf<Luggage?>(null) }
 
     fun persist() = TripStore.save(ctx, trips.toList())
+    fun persistLuggage() = TripStore.saveLuggage(ctx, luggage.toList())
 
     val sorted = trips.sortedBy { it.epochDay }
 
     val viewing = trips.find { it.id == viewingId }
-    BackHandler(enabled = viewing != null) { if (showTodos) showTodos = false else viewingId = null }
+    val viewingBag = luggage.find { it.id == viewingLuggageId }
+    BackHandler(enabled = viewing != null || showLuggage) {
+        when {
+            viewingBag != null -> viewingLuggageId = null
+            showLuggage -> showLuggage = false
+            showTodos -> showTodos = false
+            else -> viewingId = null
+        }
+    }
 
-    if (viewing != null && showTodos) {
+    if (showLuggage) {
+        if (viewingBag != null) {
+            val bagTrips = trips.filter { it.luggageIds.contains(viewingBag.id) }.sortedBy { it.epochDay }
+            LuggageDetails(
+                bag = viewingBag,
+                tripsForBag = bagTrips,
+                onBack = { viewingLuggageId = null },
+                onEdit = { editingLuggage = viewingBag },
+                onTags = { list ->
+                    val i = luggage.indexOfFirst { it.id == viewingBag.id }
+                    if (i >= 0) {
+                        luggage[i] = luggage[i].copy(tags = list)
+                        persistLuggage()
+                    }
+                },
+                onDelete = {
+                    TripStore.deletePhoto(viewingBag.photoPath)
+                    viewingBag.tags.forEach { TripStore.deletePhoto(it.path) }
+                    luggage.removeAll { it.id == viewingBag.id }
+                    persistLuggage()
+                    for (i in trips.indices) {
+                        if (trips[i].luggageIds.contains(viewingBag.id)) {
+                            trips[i] = trips[i].copy(luggageIds = trips[i].luggageIds - viewingBag.id)
+                        }
+                    }
+                    persist()
+                    viewingLuggageId = null
+                }
+            )
+        } else {
+            LuggageList(
+                bags = luggage.toList(),
+                tripCount = { b -> trips.count { it.luggageIds.contains(b.id) } },
+                onBack = { showLuggage = false },
+                onAdd = { addingLuggage = true },
+                onOpen = { viewingLuggageId = it.id }
+            )
+        }
+    } else if (viewing != null && showTodos) {
         TodoScreen(
             trip = viewing,
             onBack = { showTodos = false },
@@ -120,6 +172,7 @@ fun TripApp() {
     } else if (viewing != null) {
         TripDetails(
             trip = viewing,
+            bags = luggage.filter { viewing.luggageIds.contains(it.id) },
             onBack = { viewingId = null },
             onEdit = { editing = viewing },
             onTodos = { showTodos = true },
@@ -142,7 +195,10 @@ fun TripApp() {
     Scaffold(
         containerColor = Color(0xFFE8EEF4),
         floatingActionButton = {
-            FloatingActionButton(onClick = { adding = true }) { Text("+", style = MaterialTheme.typography.headlineMedium) }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ExtendedFloatingActionButton(onClick = { showLuggage = true }) { Text("Luggage") }
+                ExtendedFloatingActionButton(onClick = { adding = true }) { Text("+ Trip") }
+            }
         }
     ) { pad ->
         Column(Modifier.padding(pad)) {
@@ -171,14 +227,36 @@ fun TripApp() {
     if (adding) {
         TripEditor(
             initial = null,
+            allLuggage = luggage.toList(),
             onSave = { trips.add(it); persist(); adding = false },
             onDelete = null,
             onDismiss = { adding = false }
         )
     }
+    if (addingLuggage) {
+        LuggageEditor(
+            initial = null,
+            onSave = { luggage.add(it); persistLuggage(); addingLuggage = false },
+            onDismiss = { addingLuggage = false }
+        )
+    }
+    editingLuggage?.let { current ->
+        LuggageEditor(
+            initial = current,
+            onSave = { updated ->
+                if (updated.photoPath != current.photoPath) TripStore.deletePhoto(current.photoPath)
+                val i = luggage.indexOfFirst { it.id == current.id }
+                if (i >= 0) luggage[i] = updated
+                persistLuggage()
+                editingLuggage = null
+            },
+            onDismiss = { editingLuggage = null }
+        )
+    }
     editing?.let { current ->
         TripEditor(
             initial = current,
+            allLuggage = luggage.toList(),
             onSave = { updated ->
                 if (updated.photoPath != current.photoPath) TripStore.deletePhoto(current.photoPath)
                 val i = trips.indexOfFirst { it.id == current.id }
@@ -289,6 +367,7 @@ fun TripCard(trip: Trip, onClick: () -> Unit) {
 @Composable
 fun TripDetails(
     trip: Trip,
+    bags: List<Luggage>,
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onTodos: () -> Unit,
@@ -324,7 +403,8 @@ fun TripDetails(
             }
         }
         TodoSummary(trip.todos)
-        TicketsSection(trip.attachments, onAttachments)
+        TicketsSection("Tickets", listOf("Airline ticket", "Luggage claim ticket", "Other"), trip.attachments, onAttachments)
+        LuggageStrip(bags)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             FieldButton(
@@ -378,12 +458,19 @@ fun decodeSampled(path: String, target: Int): ImageBitmap? {
 }
 
 @Composable
-fun TicketsSection(items: List<Attachment>, onChange: (List<Attachment>) -> Unit) {
+fun TicketsSection(
+    title: String,
+    labels: List<String>,
+    items: List<Attachment>,
+    onChange: (List<Attachment>) -> Unit
+) {
     val ctx = LocalContext.current
     var pendingPath by remember { mutableStateOf<String?>(null) }
     var viewing by remember { mutableStateOf<Attachment?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) TripStore.importPhoto(ctx, uri, 2048)?.let { pendingPath = it }
+        if (uri != null) TripStore.importPhoto(ctx, uri, 2048)?.let { p ->
+            if (labels.size == 1) onChange(items + Attachment(label = labels[0], path = p)) else pendingPath = p
+        }
     }
 
     Column(Modifier.fillMaxWidth()) {
@@ -395,7 +482,7 @@ fun TicketsSection(items: List<Attachment>, onChange: (List<Attachment>) -> Unit
                 .background(Color(0xFFE0E6EB))
         )
         Text(
-            "Tickets",
+            title,
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp)
         )
@@ -441,7 +528,7 @@ fun TicketsSection(items: List<Attachment>, onChange: (List<Attachment>) -> Unit
             title = { Text("What is this?") },
             text = {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    listOf("Airline ticket", "Luggage claim ticket", "Other").forEach { label ->
+                    labels.forEach { label ->
                         FieldButton(onClick = {
                             onChange(items + Attachment(label = label, path = path))
                             pendingPath = null
@@ -706,9 +793,306 @@ fun TodoScreen(trip: Trip, onBack: () -> Unit, onChange: (List<TodoItem>) -> Uni
     }
 }
 
+private fun tripCountText(n: Int): String = when (n) {
+    0 -> "Not on a trip yet"
+    1 -> "On 1 trip"
+    else -> "On $n trips"
+}
+
+@Composable
+fun LuggageStrip(bags: List<Luggage>) {
+    if (bags.isEmpty()) return
+    Column(Modifier.fillMaxWidth()) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .height(1.dp)
+                .background(Color(0xFFE0E6EB))
+        )
+        Text(
+            "Luggage",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp)
+        )
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            bags.forEach { b ->
+                val thumb = remember(b.photoPath) { b.photoPath?.let { decodeSampled(it, 300) } }
+                Column(Modifier.width(100.dp)) {
+                    if (thumb != null) {
+                        Image(
+                            thumb, contentDescription = b.name, contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxWidth().height(76.dp).clip(RoundedCornerShape(10.dp))
+                        )
+                    } else {
+                        Box(Modifier.fillMaxWidth().height(76.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFCFD8DC)))
+                    }
+                    Text(b.name, style = MaterialTheme.typography.bodySmall, maxLines = 2, modifier = Modifier.padding(top = 4.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun LuggageCard(bag: Luggage, tripCount: Int, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .cardShadow()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Box(Modifier.fillMaxWidth().height(200.dp)) {
+            TripPhoto(bag.photoPath, Modifier.fillMaxSize(), bag.focusX, bag.focusY, bag.zoom)
+            Column(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, bottom = 10.dp)
+            ) {
+                ShadowText(bag.name, MaterialTheme.typography.titleLarge)
+                ShadowText(tripCountText(tripCount), MaterialTheme.typography.bodyLarge)
+            }
+        }
+    }
+}
+
+@Composable
+fun LuggageList(
+    bags: List<Luggage>,
+    tripCount: (Luggage) -> Int,
+    onBack: () -> Unit,
+    onAdd: () -> Unit,
+    onOpen: (Luggage) -> Unit
+) {
+    Scaffold(
+        containerColor = Color(0xFFE8EEF4),
+        floatingActionButton = {
+            ExtendedFloatingActionButton(onClick = onAdd) { Text("+ Add luggage") }
+        }
+    ) { pad ->
+        Column(Modifier.padding(pad)) {
+            TextButton(onClick = onBack, modifier = Modifier.padding(start = 8.dp, top = 8.dp)) {
+                Text("\u2039 Back to trips", style = MaterialTheme.typography.titleMedium)
+            }
+            Text(
+                "My Luggage",
+                style = MaterialTheme.typography.headlineLarge,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+            )
+            Spacer(Modifier.height(4.dp))
+            if (bags.isEmpty()) {
+                Text(
+                    "No luggage yet. Tap + Add luggage to save your first bag.",
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+            LazyColumn(
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                items(bags, key = { it.id }) { bag ->
+                    LuggageCard(bag, tripCount(bag)) { onOpen(bag) }
+                }
+                item { Spacer(Modifier.height(80.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+fun LuggageDetails(
+    bag: Luggage,
+    tripsForBag: List<Trip>,
+    onBack: () -> Unit,
+    onEdit: () -> Unit,
+    onTags: (List<Attachment>) -> Unit,
+    onDelete: () -> Unit
+) {
+    var confirmDelete by remember { mutableStateOf(false) }
+    val tagLabels = listOf("Baggage claim tag") + tripsForBag.map { "Tag: " + it.name }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xFFE8EEF4))
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        TextButton(onClick = onBack) {
+            Text("\u2039 Back to luggage", style = MaterialTheme.typography.titleMedium)
+        }
+        Column(Modifier.fillMaxWidth().cardShadow().background(Color.White)) {
+            Box(Modifier.fillMaxWidth().aspectRatio(1.25f)) {
+                TripPhoto(bag.photoPath, Modifier.fillMaxSize(), bag.focusX, bag.focusY, bag.zoom)
+                Column(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
+                ) {
+                    ShadowText(bag.name, MaterialTheme.typography.headlineMedium)
+                    ShadowText(tripCountText(tripsForBag.size), MaterialTheme.typography.titleMedium)
+                }
+            }
+            Text(
+                "Trips",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 8.dp)
+            )
+            if (tripsForBag.isEmpty()) {
+                Text(
+                    "Not on any trip yet. Add it from a trip's Edit screen.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF78909C),
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
+                )
+            }
+            tripsForBag.forEach { t ->
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .height(1.dp)
+                        .background(Color(0xFFE0E6EB))
+                )
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    Text(t.name, style = MaterialTheme.typography.bodyLarge)
+                    Text(dateRange(t), style = MaterialTheme.typography.bodyMedium, color = Color(0xFF455A64))
+                }
+            }
+            TicketsSection("Baggage claim tags", tagLabels, bag.tags, onTags)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FieldButton(
+                onClick = onEdit,
+                modifier = Modifier.weight(1f).height(56.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp)
+            ) { Text("Edit luggage", maxLines = 1) }
+            FieldButton(
+                onClick = { confirmDelete = true },
+                modifier = Modifier.weight(1f).height(56.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp)
+            ) { Text("Delete luggage", maxLines = 1, color = MaterialTheme.colorScheme.error) }
+        }
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete this luggage?") },
+            text = { Text("This will remove ${bag.name}, its photo, and its claim tag images. It can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = { confirmDelete = false; onDelete() }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } }
+        )
+    }
+}
+
+@Composable
+fun LuggageEditor(initial: Luggage?, onSave: (Luggage) -> Unit, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    var name by remember { mutableStateOf(initial?.name ?: "") }
+    var photo by remember { mutableStateOf(initial?.photoPath) }
+    var fx by remember { mutableStateOf(initial?.focusX ?: 0.5f) }
+    var fy by remember { mutableStateOf(initial?.focusY ?: 0.5f) }
+    var zoom by remember { mutableStateOf(initial?.zoom ?: 1f) }
+    val cardAspect = (LocalConfiguration.current.screenWidthDp - 32f) / 200f
+    val dims = remember(photo) {
+        photo?.let { p ->
+            val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(p, o)
+            Pair(o.outWidth, o.outHeight)
+        }
+    }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) TripStore.importPhoto(ctx, uri)?.let { newPath ->
+            if (photo != null && photo != initial?.photoPath) TripStore.deletePhoto(photo)
+            photo = newPath
+            fx = 0.5f; fy = 0.5f; zoom = 1f
+        }
+    }
+
+    AlertDialog(
+        containerColor = Color(0xFFE8EEF4),
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "New luggage" else "Edit luggage") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                TextField(
+                    name, { name = it },
+                    label = { Text("Luggage name") }, singleLine = true,
+                    shape = cardShape,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    ),
+                    modifier = Modifier.fillMaxWidth().cardShadow()
+                )
+                val previewMod = Modifier.fillMaxWidth().aspectRatio(cardAspect).cardShadow()
+                if (photo != null && dims != null && dims.first > 0 && dims.second > 0) {
+                    TripPhoto(
+                        photo,
+                        previewMod.pointerInput(photo) {
+                            detectTransformGestures { _, pan, gz, _ ->
+                                val bw = dims.first.toFloat()
+                                val bh = dims.second.toFloat()
+                                zoom = (zoom * gz).coerceIn(1f, 5f)
+                                val scale = maxOf(size.width / bw, size.height / bh) * zoom
+                                val rx = bw - size.width / scale
+                                val ry = bh - size.height / scale
+                                if (rx > 0f) fx = (fx - pan.x / scale / rx).coerceIn(0f, 1f)
+                                if (ry > 0f) fy = (fy - pan.y / scale / ry).coerceIn(0f, 1f)
+                            }
+                        },
+                        fx, fy, zoom
+                    )
+                    Text("Drag to move the photo, pinch to zoom", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    TripPhoto(photo, previewMod)
+                }
+                FieldButton(onClick = {
+                    picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }) { Text(if (photo == null) "Choose photo" else "Change photo") }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = name.isNotBlank(),
+                onClick = {
+                    onSave(
+                        Luggage(
+                            id = initial?.id ?: java.util.UUID.randomUUID().toString(),
+                            name = name.trim(), photoPath = photo,
+                            focusX = fx, focusY = fy, zoom = zoom,
+                            tags = initial?.tags ?: emptyList()
+                        )
+                    )
+                }
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
 @Composable
 fun TripEditor(
     initial: Trip?,
+    allLuggage: List<Luggage>,
     onSave: (Trip) -> Unit,
     onDelete: (() -> Unit)?,
     onDismiss: () -> Unit
@@ -725,6 +1109,7 @@ fun TripEditor(
     var fx by remember { mutableStateOf(initial?.focusX ?: 0.5f) }
     var fy by remember { mutableStateOf(initial?.focusY ?: 0.5f) }
     var zoom by remember { mutableStateOf(initial?.zoom ?: 1f) }
+    var luggageIds by remember { mutableStateOf(initial?.luggageIds ?: emptyList()) }
     val cardAspect = (LocalConfiguration.current.screenWidthDp - 32f) / 200f
     val dims = remember(photo) {
         photo?.let { p ->
@@ -798,6 +1183,38 @@ fun TripEditor(
                 FieldButton(onClick = {
                     picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }) { Text(if (photo == null) "Choose photo" else "Change photo") }
+                Column(Modifier.fillMaxWidth().cardShadow().background(Color.White).padding(vertical = 8.dp)) {
+                    Text(
+                        "Luggage",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                    if (allLuggage.isEmpty()) {
+                        Text(
+                            "No luggage saved yet. Add a bag with the Luggage button on the main page.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFF78909C),
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
+                        )
+                    }
+                    allLuggage.forEach { bag ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    luggageIds = if (luggageIds.contains(bag.id)) luggageIds - bag.id else luggageIds + bag.id
+                                }
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = luggageIds.contains(bag.id),
+                                onCheckedChange = { c -> luggageIds = if (c) luggageIds + bag.id else luggageIds - bag.id }
+                            )
+                            Text(bag.name, style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
                 if (onDelete != null) {
                     FieldButton(onClick = onDelete) { Text("Delete trip", color = MaterialTheme.colorScheme.error) }
                 }
@@ -811,7 +1228,8 @@ fun TripEditor(
                         name = name.trim(), epochDay = date.toEpochDay(), endEpochDay = endDate.toEpochDay(),
                         photoPath = photo, focusX = fx, focusY = fy, zoom = zoom,
                         todos = initial?.todos ?: emptyList(),
-                        attachments = initial?.attachments ?: emptyList()))
+                        attachments = initial?.attachments ?: emptyList(),
+                        luggageIds = luggageIds))
                 }
             ) { Text("Save") }
         },
