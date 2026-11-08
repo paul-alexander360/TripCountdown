@@ -23,6 +23,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -119,8 +122,16 @@ fun TripApp() {
             onBack = { viewingId = null },
             onEdit = { editing = viewing },
             onTodos = { showTodos = true },
+            onAttachments = { list ->
+                val i = trips.indexOfFirst { it.id == viewing.id }
+                if (i >= 0) {
+                    trips[i] = trips[i].copy(attachments = list)
+                    persist()
+                }
+            },
             onDelete = {
                 TripStore.deletePhoto(viewing.photoPath)
+                viewing.attachments.forEach { TripStore.deletePhoto(it.path) }
                 trips.removeAll { it.id == viewing.id }
                 persist()
                 viewingId = null
@@ -175,6 +186,7 @@ fun TripApp() {
             },
             onDelete = {
                 TripStore.deletePhoto(current.photoPath)
+                current.attachments.forEach { TripStore.deletePhoto(it.path) }
                 trips.removeAll { it.id == current.id }
                 persist(); editing = null
             },
@@ -274,7 +286,14 @@ fun TripCard(trip: Trip, onClick: () -> Unit) {
 }
 
 @Composable
-fun TripDetails(trip: Trip, onBack: () -> Unit, onEdit: () -> Unit, onTodos: () -> Unit, onDelete: () -> Unit) {
+fun TripDetails(
+    trip: Trip,
+    onBack: () -> Unit,
+    onEdit: () -> Unit,
+    onTodos: () -> Unit,
+    onAttachments: (List<Attachment>) -> Unit,
+    onDelete: () -> Unit
+) {
     var showTodoNote by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
@@ -304,6 +323,7 @@ fun TripDetails(trip: Trip, onBack: () -> Unit, onEdit: () -> Unit, onTodos: () 
             }
         }
         TodoSummary(trip.todos)
+        TicketsSection(trip.attachments, onAttachments)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             FieldButton(
@@ -343,6 +363,162 @@ fun TripDetails(trip: Trip, onBack: () -> Unit, onEdit: () -> Unit, onTodos: () 
                 }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } }
+        )
+    }
+}
+
+fun decodeSampled(path: String, target: Int): ImageBitmap? {
+    val b = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, b)
+    var sample = 1
+    while (b.outWidth / sample > target * 2 || b.outHeight / sample > target * 2) sample *= 2
+    val o = BitmapFactory.Options().apply { inSampleSize = sample }
+    return BitmapFactory.decodeFile(path, o)?.asImageBitmap()
+}
+
+@Composable
+fun TicketsSection(items: List<Attachment>, onChange: (List<Attachment>) -> Unit) {
+    val ctx = LocalContext.current
+    var pendingPath by remember { mutableStateOf<String?>(null) }
+    var viewing by remember { mutableStateOf<Attachment?>(null) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) TripStore.importPhoto(ctx, uri, 2048)?.let { pendingPath = it }
+    }
+
+    Column(Modifier.fillMaxWidth()) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .height(1.dp)
+                .background(Color(0xFFE0E6EB))
+        )
+        Text(
+            "Tickets",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp)
+        )
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items.forEach { a ->
+                val thumb = remember(a.path) { decodeSampled(a.path, 300) }
+                Column(Modifier.width(120.dp).clickable { viewing = a }) {
+                    if (thumb != null) {
+                        Image(
+                            thumb, contentDescription = a.label, contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxWidth().height(90.dp).clip(RoundedCornerShape(10.dp))
+                        )
+                    } else {
+                        Box(Modifier.fillMaxWidth().height(90.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFCFD8DC)))
+                    }
+                    Text(a.label, style = MaterialTheme.typography.bodySmall, maxLines = 2, modifier = Modifier.padding(top = 4.dp))
+                }
+            }
+            Box(
+                Modifier
+                    .width(120.dp)
+                    .height(90.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFFE8EEF4))
+                    .clickable { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("+ Add", style = MaterialTheme.typography.titleMedium, color = Color(0xFF455A64))
+            }
+        }
+    }
+
+    pendingPath?.let { path ->
+        AlertDialog(
+            containerColor = Color(0xFFE8EEF4),
+            onDismissRequest = { TripStore.deletePhoto(path); pendingPath = null },
+            title = { Text("What is this?") },
+            text = {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    listOf("Airline ticket", "Luggage claim ticket", "Other").forEach { label ->
+                        FieldButton(onClick = {
+                            onChange(items + Attachment(label = label, path = path))
+                            pendingPath = null
+                        }) { Text(label) }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { TripStore.deletePhoto(path); pendingPath = null }) { Text("Cancel") } }
+        )
+    }
+    viewing?.let { a ->
+        TicketViewer(
+            a,
+            onClose = { viewing = null },
+            onRemove = {
+                TripStore.deletePhoto(a.path)
+                onChange(items.filter { it.id != a.id })
+                viewing = null
+            }
+        )
+    }
+}
+
+@Composable
+fun TicketViewer(a: Attachment, onClose: () -> Unit, onRemove: () -> Unit) {
+    val bmp = remember(a.path) { decodeSampled(a.path, 2048) }
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    var confirm by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            if (bmp != null) {
+                Image(
+                    bmp, contentDescription = a.label, contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                scale = (scale * zoom).coerceIn(1f, 6f)
+                                offset = if (scale <= 1.01f) Offset.Zero else offset + pan
+                            }
+                        }
+                        .graphicsLayer(
+                            scaleX = scale, scaleY = scale,
+                            translationX = offset.x, translationY = offset.y
+                        )
+                )
+            }
+            Row(
+                Modifier
+                    .align(Alignment.TopStart)
+                    .fillMaxWidth()
+                    .background(Color(0x99000000))
+                    .padding(start = 8.dp, end = 8.dp, top = 28.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onClose) { Text("\u2039 Close", color = Color.White) }
+                Text(
+                    a.label, color = Color.White, style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp), maxLines = 1
+                )
+                TextButton(onClick = { confirm = true }) { Text("Remove", color = Color(0xFFFF8A80)) }
+            }
+        }
+    }
+    if (confirm) {
+        AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text("Remove this image?") },
+            text = { Text("It will be deleted from the app.") },
+            confirmButton = {
+                TextButton(onClick = { confirm = false; onRemove() }) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel") } }
         )
     }
 }
@@ -633,7 +809,8 @@ fun TripEditor(
                     onSave(Trip(id = initial?.id ?: java.util.UUID.randomUUID().toString(),
                         name = name.trim(), epochDay = date.toEpochDay(), endEpochDay = endDate.toEpochDay(),
                         photoPath = photo, focusX = fx, focusY = fy, zoom = zoom,
-                        todos = initial?.todos ?: emptyList()))
+                        todos = initial?.todos ?: emptyList(),
+                        attachments = initial?.attachments ?: emptyList()))
                 }
             ) { Text("Save") }
         },
