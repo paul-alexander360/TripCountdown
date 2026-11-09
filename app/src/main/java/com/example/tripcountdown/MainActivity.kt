@@ -94,12 +94,28 @@ fun countdown(t: Trip): String {
     }
 }
 
+object AppNav {
+    var showSettings by mutableStateOf(false)
+}
+
 @Composable
 fun TripApp() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val trips = remember { mutableStateListOf<Trip>().apply { addAll(TripStore.load(ctx)) } }
     LaunchedEffect(Unit) { TripWidget().updateAll(ctx) }
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    LaunchedEffect(Unit) {
+        Reminders.ensureChannel(ctx)
+        Reminders.schedule(ctx)
+        Reminders.checkNow(ctx)
+        if (android.os.Build.VERSION.SDK_INT >= 33 && !Reminders.canNotify(ctx) &&
+            NotifSettings.getBool(ctx, "enabled", true) && !NotifSettings.getBool(ctx, "asked", false)
+        ) {
+            NotifSettings.setBool(ctx, "asked", true)
+            permLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     var editing by remember { mutableStateOf<Trip?>(null) }
     var adding by remember { mutableStateOf(false) }
     var viewingId by remember { mutableStateOf<String?>(null) }
@@ -123,8 +139,9 @@ fun TripApp() {
 
     val viewing = trips.find { it.id == viewingId }
     val viewingBag = luggage.find { it.id == viewingLuggageId }
-    BackHandler(enabled = viewing != null || showLuggage || showPast) {
+    BackHandler(enabled = viewing != null || showLuggage || showPast || AppNav.showSettings) {
         when {
+            AppNav.showSettings -> AppNav.showSettings = false
             viewingBag != null -> viewingLuggageId = null
             showLuggage -> showLuggage = false
             showTodos -> showTodos = false
@@ -133,7 +150,9 @@ fun TripApp() {
         }
     }
 
-    if (showLuggage) {
+    if (AppNav.showSettings) {
+        SettingsScreen(onBack = { AppNav.showSettings = false })
+    } else if (showLuggage) {
         if (viewingBag != null) {
             val bagTrips = trips.filter { it.luggageIds.contains(viewingBag.id) }.sortedBy { it.epochDay }
             LuggageDetails(
@@ -381,7 +400,8 @@ fun AppBar(
     title: String,
     backLabel: String? = null,
     onBack: (() -> Unit)? = null,
-    actions: List<Pair<String, () -> Unit>> = emptyList()
+    actions: List<Pair<String, () -> Unit>> = emptyList(),
+    showGear: Boolean = true
 ) {
     val segments: List<Pair<String, () -> Unit>> =
         (if (onBack != null) listOf(("\u2039 " + (backLabel ?: "Back")) to onBack) else emptyList()) + actions
@@ -401,8 +421,19 @@ fun AppBar(
                 color = Color.White,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
-                modifier = Modifier.padding(horizontal = 16.dp)
+                modifier = Modifier.padding(horizontal = 56.dp)
             )
+            if (showGear) {
+                Text(
+                    "\u2699\uFE0E",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .clickable { AppNav.showSettings = true }
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                )
+            }
         }
         if (segments.isNotEmpty()) {
             Row(
