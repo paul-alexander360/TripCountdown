@@ -578,7 +578,7 @@ fun TripDetails(
                 }
                 TodoSummary(trip.todos)
                 ItinerarySummary(trip)
-                TicketsSection("Tickets", listOf("Airline ticket", "Luggage claim ticket", "Other"), trip.attachments, onAttachments)
+                TicketsSection("Documents", listOf("Airline ticket", "Luggage claim ticket", "Reservation", "Other"), trip.attachments, onAttachments)
                 LuggageStrip(bags)
             }
             FieldButton(onClick = { confirmDelete = true }) {
@@ -621,10 +621,18 @@ fun TicketsSection(
     val ctx = LocalContext.current
     var pendingPath by remember { mutableStateOf<String?>(null) }
     var viewing by remember { mutableStateOf<Attachment?>(null) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) TripStore.importPhoto(ctx, uri, 2048)?.let { p ->
-            if (labels.size == 1) onChange(items + Attachment(label = labels[0], path = p)) else pendingPath = p
-        }
+    var pdfChoice by remember { mutableStateOf<Attachment?>(null) }
+    var showAddChoice by remember { mutableStateOf(false) }
+
+    fun picked(p: String) {
+        if (labels.size == 1) onChange(items + Attachment(label = labels[0], path = p)) else pendingPath = p
+    }
+
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) TripStore.importPhoto(ctx, uri, 2048)?.let { picked(it) }
+    }
+    val pdfPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) TripStore.importPdf(ctx, uri)?.let { picked(it) }
     }
 
     Column(Modifier.fillMaxWidth()) {
@@ -648,15 +656,36 @@ fun TicketsSection(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items.forEach { a ->
-                val thumb = remember(a.path) { decodeSampled(a.path, 300) }
-                Column(Modifier.width(120.dp).clickable { viewing = a }) {
-                    if (thumb != null) {
-                        Image(
-                            thumb, contentDescription = a.label, contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxWidth().height(90.dp).clip(RoundedCornerShape(10.dp))
-                        )
-                    } else {
-                        Box(Modifier.fillMaxWidth().height(90.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFCFD8DC)))
+                val pdf = isPdf(a.path)
+                val thumb = remember(a.path) {
+                    if (pdf) pdfThumb(a.path, 360) else decodeSampled(a.path, 300)
+                }
+                Column(Modifier.width(120.dp).clickable { if (pdf) pdfChoice = a else viewing = a }) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(90.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFFCFD8DC))
+                    ) {
+                        if (thumb != null) {
+                            Image(
+                                thumb, contentDescription = a.label, contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        if (pdf) {
+                            Text(
+                                "PDF",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(4.dp)
+                                    .background(Color(0xFFB3261E), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                            )
+                        }
                     }
                     Text(a.label, style = MaterialTheme.typography.bodySmall, maxLines = 2, modifier = Modifier.padding(top = 4.dp))
                 }
@@ -667,7 +696,7 @@ fun TicketsSection(
                     .height(90.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(Color(0xFFE8EEF4))
-                    .clickable { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    .clickable { showAddChoice = true },
                 contentAlignment = Alignment.Center
             ) {
                 Text("+ Add", style = MaterialTheme.typography.titleMedium, color = Color(0xFF455A64))
@@ -675,6 +704,27 @@ fun TicketsSection(
         }
     }
 
+    if (showAddChoice) {
+        AlertDialog(
+            containerColor = Color(0xFFE8EEF4),
+            onDismissRequest = { showAddChoice = false },
+            title = { Text("Add a document") },
+            text = {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    FieldButton(onClick = {
+                        showAddChoice = false
+                        photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }) { Text("Photo from gallery") }
+                    FieldButton(onClick = {
+                        showAddChoice = false
+                        pdfPicker.launch(arrayOf("application/pdf"))
+                    }) { Text("PDF file") }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { showAddChoice = false }) { Text("Cancel") } }
+        )
+    }
     pendingPath?.let { path ->
         AlertDialog(
             containerColor = Color(0xFFE8EEF4),
@@ -692,6 +742,26 @@ fun TicketsSection(
             },
             confirmButton = {},
             dismissButton = { TextButton(onClick = { TripStore.deletePhoto(path); pendingPath = null }) { Text("Cancel") } }
+        )
+    }
+    pdfChoice?.let { a ->
+        AlertDialog(
+            onDismissRequest = { pdfChoice = null },
+            title = { Text(a.label) },
+            text = { Text("PDF document") },
+            confirmButton = {
+                TextButton(onClick = { pdfChoice = null; openPdf(ctx, a.path) }) { Text("Open PDF") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        TripStore.deletePhoto(a.path)
+                        onChange(items.filter { it.id != a.id })
+                        pdfChoice = null
+                    }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                    TextButton(onClick = { pdfChoice = null }) { Text("Cancel") }
+                }
+            }
         )
     }
     viewing?.let { a ->
@@ -1209,6 +1279,13 @@ fun LuggageEditor(initial: Luggage?, onSave: (Luggage) -> Unit, onDismiss: () ->
                 FieldButton(onClick = {
                     picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }) { Text(if (photo == null) "Choose photo" else "Change photo") }
+                DefaultImagePicker(DefaultArt.luggageKinds) { kind ->
+                    DefaultArt.save(ctx, kind)?.let { newPath ->
+                        if (photo != null && photo != initial?.photoPath) TripStore.deletePhoto(photo)
+                        photo = newPath
+                        fx = 0.5f; fy = 0.5f; zoom = 1f
+                    }
+                }
             }
         },
         confirmButton = {
@@ -1324,6 +1401,13 @@ fun TripEditor(
                 FieldButton(onClick = {
                     picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }) { Text(if (photo == null) "Choose photo" else "Change photo") }
+                DefaultImagePicker(DefaultArt.tripKinds) { kind ->
+                    DefaultArt.save(ctx, kind)?.let { newPath ->
+                        if (photo != null && photo != initial?.photoPath) TripStore.deletePhoto(photo)
+                        photo = newPath
+                        fx = 0.5f; fy = 0.5f; zoom = 1f
+                    }
+                }
                 Column(Modifier.fillMaxWidth().cardShadow().background(Color.White).padding(vertical = 8.dp)) {
                     Text(
                         "Luggage",
