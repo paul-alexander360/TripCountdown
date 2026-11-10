@@ -3,6 +3,8 @@ package com.example.tripcountdown
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import org.json.JSONArray
 import org.json.JSONObject
@@ -216,6 +218,35 @@ object TripStore {
         luggageFile(ctx).writeText(arr.toString())
     }
 
+    /** Turns a photo upright using the orientation tag the camera saved in it. */
+    private fun applyExifOrientation(ctx: Context, uri: Uri, bmp: Bitmap): Bitmap {
+        val orientation = try {
+            ctx.contentResolver.openInputStream(uri)?.use {
+                ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+            } ?: ExifInterface.ORIENTATION_NORMAL
+        } catch (e: Exception) {
+            ExifInterface.ORIENTATION_NORMAL
+        }
+        val m = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> m.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> m.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> m.postRotate(270f)
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> m.postScale(-1f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> m.postScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> {
+                m.postRotate(90f)
+                m.postScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_TRANSVERSE -> {
+                m.postRotate(270f)
+                m.postScale(-1f, 1f)
+            }
+            else -> return bmp
+        }
+        return Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
+    }
+
     /** Copies the chosen photo into the app's private storage, shrunk to max 1080px. */
     fun importPhoto(ctx: Context, uri: Uri, maxDim: Int = 1080): String? {
         return try {
@@ -233,7 +264,21 @@ object TripStore {
             else bmp
             val dir = File(ctx.filesDir, "photos").apply { mkdirs() }
             val dest = File(dir, UUID.randomUUID().toString() + ".jpg")
-            dest.outputStream().use { out.compress(Bitmap.CompressFormat.JPEG, if (maxDim > 1080) 92 else 85, it) }
+            val upright = applyExifOrientation(ctx, uri, out)
+            dest.outputStream().use { upright.compress(Bitmap.CompressFormat.JPEG, if (maxDim > 1080) 92 else 85, it) }
+            dest.absolutePath
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** Copies a chosen PDF into the app's private storage. */
+    fun importPdf(ctx: Context, uri: Uri): String? {
+        return try {
+            val dir = File(ctx.filesDir, "docs").apply { mkdirs() }
+            val dest = File(dir, UUID.randomUUID().toString() + ".pdf")
+            val input = ctx.contentResolver.openInputStream(uri) ?: return null
+            input.use { ins -> dest.outputStream().use { out -> ins.copyTo(out) } }
             dest.absolutePath
         } catch (e: Exception) {
             null
