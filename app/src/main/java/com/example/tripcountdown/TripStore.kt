@@ -22,6 +22,13 @@ data class Attachment(
     val path: String
 )
 
+data class ItineraryItem(
+    val id: String = UUID.randomUUID().toString(),
+    val epochDay: Long,
+    val place: String = "",
+    val activity: String = ""
+)
+
 data class Luggage(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
@@ -43,11 +50,25 @@ data class Trip(
     val zoom: Float = 1f,
     val todos: List<TodoItem> = emptyList(),
     val attachments: List<Attachment> = emptyList(),
-    val luggageIds: List<String> = emptyList()
+    val luggageIds: List<String> = emptyList(),
+    val itinerary: List<ItineraryItem> = emptyList()
 )
 
 object TripStore {
     private fun file(ctx: Context) = File(ctx.filesDir, "trips.json")
+
+    private fun readItinerary(arr: JSONArray?): List<ItineraryItem> {
+        if (arr == null) return emptyList()
+        return (0 until arr.length()).map {
+            val o = arr.getJSONObject(it)
+            ItineraryItem(
+                o.getString("id"),
+                o.getLong("epochDay"),
+                o.optString("place", ""),
+                o.optString("activity", "")
+            )
+        }
+    }
 
     private fun readStrings(arr: JSONArray?): List<String> {
         if (arr == null) return emptyList()
@@ -91,7 +112,8 @@ object TripStore {
                     zoom = o.optDouble("zoom", 1.0).toFloat(),
                     todos = readTodos(o.optJSONArray("todos")),
                     attachments = readAttachments(o.optJSONArray("attachments")),
-                    luggageIds = readStrings(o.optJSONArray("luggageIds"))
+                    luggageIds = readStrings(o.optJSONArray("luggageIds")),
+                    itinerary = readItinerary(o.optJSONArray("itinerary"))
                 )
             }
         } catch (e: Exception) {
@@ -112,6 +134,16 @@ object TripStore {
                 put("focusY", it.focusY.toDouble())
                 put("zoom", it.zoom.toDouble())
                 put("luggageIds", JSONArray(it.luggageIds))
+                put("itinerary", JSONArray().also { list ->
+                    it.itinerary.forEach { e ->
+                        list.put(JSONObject().apply {
+                            put("id", e.id)
+                            put("epochDay", e.epochDay)
+                            put("place", e.place)
+                            put("activity", e.activity)
+                        })
+                    }
+                })
                 put("attachments", JSONArray().also { list ->
                     it.attachments.forEach { a ->
                         list.put(JSONObject().apply {
