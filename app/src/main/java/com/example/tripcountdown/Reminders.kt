@@ -107,7 +107,10 @@ object Reminders {
 
         val earlyMonths = NotifSettings.getInt(ctx, "earlyMonths", 1)
         val finalStep = NotifSettings.getInt(ctx, "finalStep", 7)
-        val todoOn = NotifSettings.getBool(ctx, "todo", true)
+        val todoDefault = NotifSettings.getBool(ctx, "todo", true)
+        val todo7 = NotifSettings.getBool(ctx, "todo7", todoDefault)
+        val todo1 = NotifSettings.getBool(ctx, "todo1", todoDefault)
+        val todo0 = NotifSettings.getBool(ctx, "todo0", todoDefault)
         val fmt = DateTimeFormatter.ofPattern("MMM d")
         val trips = TripStore.load(ctx)
 
@@ -137,14 +140,15 @@ object Reminders {
                     }
                 }
 
-                if (todoOn && trip.endEpochDay >= day) {
+                if (trip.endEpochDay >= day) {
                     for (t in trip.todos) {
                         val due = t.dueEpochDay ?: continue
                         if (t.done) continue
                         val diff = (due - day).toInt()
-                        val label = when (diff) {
-                            7 -> "due in 1 week"
-                            1 -> "due tomorrow"
+                        val label = when {
+                            diff == 7 && todo7 -> "due in 1 week"
+                            diff == 1 && todo1 -> "due tomorrow"
+                            diff == 0 && todo0 -> "due today"
                             else -> null
                         } ?: continue
                         val key = "t$diff|${t.id}|$due"
