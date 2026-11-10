@@ -37,7 +37,8 @@ object DefaultArt {
     val tripKinds = listOf("Beach", "Mountains", "Lake", "Cruise ship", "Airplane", "RV", "Hotel")
     val luggageKinds = listOf("Carry-on", "Large suitcase")
 
-    private val data: Map<String, String> = mapOf(
+    private val data: Map<String, String>
+        get() = mapOf(
         "Beach" to BEACH,
         "Mountains" to MOUNTAINS,
         "Lake" to LAKE,
