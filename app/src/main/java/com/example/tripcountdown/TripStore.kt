@@ -96,31 +96,55 @@ object TripStore {
         }
     }
 
+    private fun backupCorrupt(f: File) {
+        try {
+            f.copyTo(File(f.parentFile, f.name + ".corrupt"), overwrite = true)
+        } catch (e: Exception) {
+        }
+    }
+
+    private fun writeAtomic(target: File, text: String) {
+        val tmp = File(target.parentFile, target.name + ".tmp")
+        tmp.writeText(text)
+        if (!tmp.renameTo(target)) {
+            target.writeText(text)
+            tmp.delete()
+        }
+    }
+
     fun load(ctx: Context): List<Trip> {
         val f = file(ctx)
         if (!f.exists()) return emptyList()
-        return try {
-            val arr = JSONArray(f.readText())
-            (0 until arr.length()).map {
-                val o = arr.getJSONObject(it)
-                Trip(
-                    id = o.getString("id"),
-                    name = o.getString("name"),
-                    epochDay = o.getLong("epochDay"),
-                    endEpochDay = o.optLong("endEpochDay", o.getLong("epochDay")),
-                    photoPath = if (o.isNull("photoPath")) null else o.getString("photoPath"),
-                    focusX = o.optDouble("focusX", 0.5).toFloat(),
-                    focusY = o.optDouble("focusY", 0.5).toFloat(),
-                    zoom = o.optDouble("zoom", 1.0).toFloat(),
-                    todos = readTodos(o.optJSONArray("todos")),
-                    attachments = readAttachments(o.optJSONArray("attachments")),
-                    luggageIds = readStrings(o.optJSONArray("luggageIds")),
-                    itinerary = readItinerary(o.optJSONArray("itinerary"))
-                )
-            }
+        val arr = try {
+            JSONArray(f.readText())
         } catch (e: Exception) {
-            emptyList()
+            backupCorrupt(f)
+            return emptyList()
         }
+        val out = mutableListOf<Trip>()
+        for (i in 0 until arr.length()) {
+            try {
+                val o = arr.getJSONObject(i)
+                out.add(
+                    Trip(
+                        id = o.getString("id"),
+                        name = o.optString("name", ""),
+                        epochDay = o.getLong("epochDay"),
+                        endEpochDay = o.optLong("endEpochDay", o.getLong("epochDay")),
+                        photoPath = if (o.isNull("photoPath")) null else o.getString("photoPath"),
+                        focusX = o.optDouble("focusX", 0.5).toFloat(),
+                        focusY = o.optDouble("focusY", 0.5).toFloat(),
+                        zoom = o.optDouble("zoom", 1.0).toFloat(),
+                        todos = readTodos(o.optJSONArray("todos")),
+                        attachments = readAttachments(o.optJSONArray("attachments")),
+                        luggageIds = readStrings(o.optJSONArray("luggageIds")),
+                        itinerary = readItinerary(o.optJSONArray("itinerary"))
+                    )
+                )
+            } catch (e: Exception) {
+            }
+        }
+        return out
     }
 
     fun save(ctx: Context, trips: List<Trip>) {
@@ -167,7 +191,7 @@ object TripStore {
                 })
             })
         }
-        file(ctx).writeText(arr.toString())
+        writeAtomic(file(ctx), arr.toString())
     }
 
     private fun luggageFile(ctx: Context) = File(ctx.filesDir, "luggage.json")
@@ -175,23 +199,31 @@ object TripStore {
     fun loadLuggage(ctx: Context): List<Luggage> {
         val f = luggageFile(ctx)
         if (!f.exists()) return emptyList()
-        return try {
-            val arr = JSONArray(f.readText())
-            (0 until arr.length()).map {
-                val o = arr.getJSONObject(it)
-                Luggage(
-                    id = o.getString("id"),
-                    name = o.getString("name"),
-                    photoPath = if (o.isNull("photoPath")) null else o.getString("photoPath"),
-                    focusX = o.optDouble("focusX", 0.5).toFloat(),
-                    focusY = o.optDouble("focusY", 0.5).toFloat(),
-                    zoom = o.optDouble("zoom", 1.0).toFloat(),
-                    tags = readAttachments(o.optJSONArray("tags"))
-                )
-            }
+        val arr = try {
+            JSONArray(f.readText())
         } catch (e: Exception) {
-            emptyList()
+            backupCorrupt(f)
+            return emptyList()
         }
+        val out = mutableListOf<Luggage>()
+        for (i in 0 until arr.length()) {
+            try {
+                val o = arr.getJSONObject(i)
+                out.add(
+                    Luggage(
+                        id = o.getString("id"),
+                        name = o.optString("name", ""),
+                        photoPath = if (o.isNull("photoPath")) null else o.getString("photoPath"),
+                        focusX = o.optDouble("focusX", 0.5).toFloat(),
+                        focusY = o.optDouble("focusY", 0.5).toFloat(),
+                        zoom = o.optDouble("zoom", 1.0).toFloat(),
+                        tags = readAttachments(o.optJSONArray("tags"))
+                    )
+                )
+            } catch (e: Exception) {
+            }
+        }
+        return out
     }
 
     fun saveLuggage(ctx: Context, items: List<Luggage>) {
@@ -215,7 +247,7 @@ object TripStore {
                 })
             })
         }
-        luggageFile(ctx).writeText(arr.toString())
+        writeAtomic(luggageFile(ctx), arr.toString())
     }
 
     /** Turns a photo upright using the orientation tag the camera saved in it. */
@@ -282,6 +314,87 @@ object TripStore {
             dest.absolutePath
         } catch (e: Exception) {
             null
+        }
+    }
+
+    private const val DATA_VERSION = 3
+
+    private fun resolvePath(ctx: Context, p: String?): String? {
+        if (p == null) return null
+        val f = File(p)
+        if (f.exists()) return p
+        for (dir in listOf("photos", "docs")) {
+            val c = File(File(ctx.filesDir, dir), f.name)
+            if (c.exists()) return c.absolutePath
+        }
+        return null
+    }
+
+    /**
+     * Runs every time the app opens. Keeps a backup when the data format changes, then checks every
+     * saved trip and bag and repairs anything that does not fit the current version of the app.
+     */
+    fun migrate(ctx: Context) {
+        try {
+            val prefs = ctx.getSharedPreferences("data_version", Context.MODE_PRIVATE)
+            val old = prefs.getInt("version", 0)
+            if (old < DATA_VERSION) {
+                for (name in listOf("trips.json", "luggage.json")) {
+                    val src = File(ctx.filesDir, name)
+                    if (src.exists()) {
+                        src.copyTo(File(ctx.filesDir, "backup_v" + old + "_" + name), overwrite = true)
+                    }
+                }
+            }
+            val bags = loadLuggage(ctx)
+            val fixedBags = bags.map { b ->
+                b.copy(
+                    name = b.name.ifBlank { "Luggage" },
+                    photoPath = resolvePath(ctx, b.photoPath),
+                    focusX = b.focusX.coerceIn(0f, 1f),
+                    focusY = b.focusY.coerceIn(0f, 1f),
+                    zoom = b.zoom.coerceIn(1f, 5f),
+                    tags = b.tags.mapNotNull { a -> resolvePath(ctx, a.path)?.let { p -> a.copy(path = p) } }
+                )
+            }.distinctBy { it.id }
+            val bagIds = fixedBags.map { it.id }.toSet()
+
+            val trips = load(ctx)
+            val fixedTrips = trips.map { t ->
+                t.copy(
+                    name = t.name.ifBlank { "Untitled trip" },
+                    endEpochDay = maxOf(t.endEpochDay, t.epochDay),
+                    photoPath = resolvePath(ctx, t.photoPath),
+                    focusX = t.focusX.coerceIn(0f, 1f),
+                    focusY = t.focusY.coerceIn(0f, 1f),
+                    zoom = t.zoom.coerceIn(1f, 5f),
+                    todos = t.todos.filter { it.text.isNotBlank() }.distinctBy { it.id },
+                    attachments = t.attachments.mapNotNull { a -> resolvePath(ctx, a.path)?.let { p -> a.copy(path = p) } },
+                    luggageIds = if (bagIds.isEmpty()) t.luggageIds else t.luggageIds.filter { it in bagIds }.distinct(),
+                    itinerary = t.itinerary.distinctBy { it.id }
+                )
+            }.distinctBy { it.id }
+
+            if (fixedBags != bags) saveLuggage(ctx, fixedBags)
+            if (fixedTrips != trips) save(ctx, fixedTrips)
+            prefs.edit().putInt("version", DATA_VERSION).apply()
+        } catch (e: Exception) {
+        }
+    }
+
+    /** Turns a saved photo a quarter turn clockwise and saves it as a new file. */
+    fun rotatePhoto(ctx: Context, path: String): String? {
+        try {
+            val bmp = BitmapFactory.decodeFile(path) ?: return null
+            val m = Matrix()
+            m.postRotate(90f)
+            val rotated = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
+            val dir = File(ctx.filesDir, "photos").apply { mkdirs() }
+            val dest = File(dir, UUID.randomUUID().toString() + ".jpg")
+            dest.outputStream().use { rotated.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+            return dest.absolutePath
+        } catch (e: Exception) {
+            return null
         }
     }
 
