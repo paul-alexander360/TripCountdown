@@ -98,6 +98,16 @@ fun CheckRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
+    val versionText = remember {
+        try {
+            val info = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
+            @Suppress("DEPRECATION")
+            val code = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+            "Travel Tracker version " + (info.versionName ?: "?") + " (build " + code + ")"
+        } catch (e: Exception) {
+            "Travel Tracker"
+        }
+    }
     var enabled by remember { mutableStateOf(NotifSettings.getBool(ctx, "enabled", true)) }
     var early by remember { mutableStateOf(NotifSettings.getInt(ctx, "earlyMonths", 1)) }
     var finalStep by remember { mutableStateOf(NotifSettings.getInt(ctx, "finalStep", 7)) }
@@ -206,6 +216,12 @@ fun SettingsScreen(onBack: () -> Unit) {
                 allowed = Reminders.canNotify(ctx)
                 Reminders.sendTest(ctx)
             }) { Text("Send a test notification") }
+            Text(
+                versionText,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF455A64),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+            )
         }
     }
 }
