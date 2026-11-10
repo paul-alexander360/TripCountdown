@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -84,12 +85,26 @@ fun OptionRow(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
 }
 
 @Composable
+fun CheckRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onChange(!checked) },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(checked = checked, onCheckedChange = { v -> onChange(v) })
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
 fun SettingsScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
     var enabled by remember { mutableStateOf(NotifSettings.getBool(ctx, "enabled", true)) }
     var early by remember { mutableStateOf(NotifSettings.getInt(ctx, "earlyMonths", 1)) }
     var finalStep by remember { mutableStateOf(NotifSettings.getInt(ctx, "finalStep", 7)) }
-    var todo by remember { mutableStateOf(NotifSettings.getBool(ctx, "todo", true)) }
+    val todoDefault = NotifSettings.getBool(ctx, "todo", true)
+    var todo7 by remember { mutableStateOf(NotifSettings.getBool(ctx, "todo7", todoDefault)) }
+    var todo1 by remember { mutableStateOf(NotifSettings.getBool(ctx, "todo1", todoDefault)) }
+    var todo0 by remember { mutableStateOf(NotifSettings.getBool(ctx, "todo0", todoDefault)) }
     var allowed by remember { mutableStateOf(Reminders.canNotify(ctx)) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         allowed = Reminders.canNotify(ctx)
@@ -168,22 +183,23 @@ fun SettingsScreen(onBack: () -> Unit) {
                 )
             }
             SettingsCard(Modifier.alpha(dim)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("To-do reminders", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "1 week before and the day before a to-do is due",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color(0xFF455A64)
-                        )
-                    }
-                    Switch(
-                        checked = todo,
-                        onCheckedChange = { v ->
-                            todo = v
-                            NotifSettings.setBool(ctx, "todo", v)
-                        }
-                    )
+                Text("To-do reminders", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Choose when to be reminded about a to-do that has a due date",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF455A64)
+                )
+                CheckRow("1 week before it's due", todo7) { v ->
+                    todo7 = v
+                    NotifSettings.setBool(ctx, "todo7", v)
+                }
+                CheckRow("1 day before it's due", todo1) { v ->
+                    todo1 = v
+                    NotifSettings.setBool(ctx, "todo1", v)
+                }
+                CheckRow("On the day it's due", todo0) { v ->
+                    todo0 = v
+                    NotifSettings.setBool(ctx, "todo0", v)
                 }
             }
             FieldButton(onClick = {
