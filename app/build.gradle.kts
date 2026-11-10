@@ -9,6 +9,16 @@ android {
     namespace = "com.example.tripcountdown"
     compileSdk = 34
 
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("ci-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+            storeType = "pkcs12"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.example.tripcountdown"
         minSdk = 26
