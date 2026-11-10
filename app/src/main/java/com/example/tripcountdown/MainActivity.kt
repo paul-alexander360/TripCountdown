@@ -120,6 +120,7 @@ fun TripApp() {
     var adding by remember { mutableStateOf(false) }
     var viewingId by remember { mutableStateOf<String?>(null) }
     var showTodos by remember { mutableStateOf(false) }
+    var showItinerary by remember { mutableStateOf(false) }
     val luggage = remember { mutableStateListOf<Luggage>().apply { addAll(TripStore.loadLuggage(ctx)) } }
     var showLuggage by remember { mutableStateOf(false) }
     var showPast by remember { mutableStateOf(false) }
@@ -144,6 +145,7 @@ fun TripApp() {
             AppNav.showSettings -> AppNav.showSettings = false
             viewingBag != null -> viewingLuggageId = null
             showLuggage -> showLuggage = false
+            showItinerary -> showItinerary = false
             showTodos -> showTodos = false
             viewing != null -> viewingId = null
             else -> showPast = false
@@ -190,6 +192,18 @@ fun TripApp() {
                 onOpen = { viewingLuggageId = it.id }
             )
         }
+    } else if (viewing != null && showItinerary) {
+        ItineraryScreen(
+            trip = viewing,
+            onBack = { showItinerary = false },
+            onChange = { list ->
+                val i = trips.indexOfFirst { it.id == viewing.id }
+                if (i >= 0) {
+                    trips[i] = trips[i].copy(itinerary = list)
+                    persist()
+                }
+            }
+        )
     } else if (viewing != null && showTodos) {
         TodoScreen(
             trip = viewing,
@@ -209,6 +223,7 @@ fun TripApp() {
             onBack = { viewingId = null },
             onEdit = { editing = viewing },
             onTodos = { showTodos = true },
+            onItinerary = { showItinerary = true },
             onAttachments = { list ->
                 val i = trips.indexOfFirst { it.id == viewing.id }
                 if (i >= 0) {
@@ -228,7 +243,7 @@ fun TripApp() {
         PastTrips(
             trips = pastTrips,
             onBack = { showPast = false },
-            onOpen = { viewingId = it.id; showTodos = false }
+            onOpen = { viewingId = it.id; showTodos = false; showItinerary = false }
         )
     } else {
     Column(Modifier.fillMaxSize().background(Color(0xFFE8EEF4))) {
@@ -248,7 +263,7 @@ fun TripApp() {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             items(sorted, key = { it.id }) { trip ->
-                TripCard(trip) { viewingId = trip.id; showTodos = false }
+                TripCard(trip) { viewingId = trip.id; showTodos = false; showItinerary = false }
             }
             item { Spacer(Modifier.height(24.dp)) }
         }
@@ -487,6 +502,7 @@ fun TripDetails(
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onTodos: () -> Unit,
+    onItinerary: () -> Unit,
     onAttachments: (List<Attachment>) -> Unit,
     onDelete: () -> Unit
 ) {
@@ -497,7 +513,7 @@ fun TripDetails(
             title = "Trip Details",
             backLabel = "Back",
             onBack = onBack,
-            actions = listOf("To-do list" to onTodos, "Edit trip" to onEdit)
+            actions = listOf("To-do list" to onTodos, "Itinerary" to onItinerary, "Edit trip" to onEdit)
         )
         Column(
             Modifier
@@ -521,6 +537,7 @@ fun TripDetails(
                     }
                 }
                 TodoSummary(trip.todos)
+                ItinerarySummary(trip)
                 TicketsSection("Tickets", listOf("Airline ticket", "Luggage claim ticket", "Other"), trip.attachments, onAttachments)
                 LuggageStrip(bags)
             }
@@ -1309,7 +1326,8 @@ fun TripEditor(
                         photoPath = photo, focusX = fx, focusY = fy, zoom = zoom,
                         todos = initial?.todos ?: emptyList(),
                         attachments = initial?.attachments ?: emptyList(),
-                        luggageIds = luggageIds))
+                        luggageIds = luggageIds,
+                        itinerary = initial?.itinerary ?: emptyList()))
                 }
             ) { Text("Save") }
         },
