@@ -63,6 +63,7 @@ import java.time.temporal.ChronoUnit
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        TripStore.migrate(applicationContext)
         setContent { MaterialTheme { TripApp() } }
     }
 }
@@ -1279,6 +1280,18 @@ fun LuggageEditor(initial: Luggage?, onSave: (Luggage) -> Unit, onDismiss: () ->
                 FieldButton(onClick = {
                     picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }) { Text(if (photo == null) "Choose photo" else "Change photo") }
+                if (photo != null) {
+                    FieldButton(onClick = {
+                        val src = photo
+                        if (src != null) {
+                            TripStore.rotatePhoto(ctx, src)?.let { newPath ->
+                                if (src != initial?.photoPath) TripStore.deletePhoto(src)
+                                photo = newPath
+                                fx = 0.5f; fy = 0.5f
+                            }
+                        }
+                    }) { Text("Rotate photo 90\u00B0") }
+                }
                 DefaultImagePicker(DefaultArt.luggageKinds) { kind ->
                     DefaultArt.save(ctx, kind)?.let { newPath ->
                         if (photo != null && photo != initial?.photoPath) TripStore.deletePhoto(photo)
@@ -1401,6 +1414,18 @@ fun TripEditor(
                 FieldButton(onClick = {
                     picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }) { Text(if (photo == null) "Choose photo" else "Change photo") }
+                if (photo != null) {
+                    FieldButton(onClick = {
+                        val src = photo
+                        if (src != null) {
+                            TripStore.rotatePhoto(ctx, src)?.let { newPath ->
+                                if (src != initial?.photoPath) TripStore.deletePhoto(src)
+                                photo = newPath
+                                fx = 0.5f; fy = 0.5f
+                            }
+                        }
+                    }) { Text("Rotate photo 90\u00B0") }
+                }
                 DefaultImagePicker(DefaultArt.tripKinds) { kind ->
                     DefaultArt.save(ctx, kind)?.let { newPath ->
                         if (photo != null && photo != initial?.photoPath) TripStore.deletePhoto(photo)
