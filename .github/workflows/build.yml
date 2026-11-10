@@ -11,10 +11,17 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      - name: Keep the same signing key for every build
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: debug-keystore-v1
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
       - run: gradle assembleDebug --no-daemon
+      - name: Show signing fingerprint
+        run: keytool -list -v -keystore ~/.android/debug.keystore -storepass android | grep -i sha256 || true
       - uses: actions/upload-artifact@v4
         with:
           name: TripCountdown-APK
