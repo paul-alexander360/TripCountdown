@@ -49,6 +49,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.ImageBitmap
@@ -71,13 +72,13 @@ private val dateFmt = DateTimeFormatter.ofPattern("EEE, MMM d, yyyy")
 private val shortFmt = DateTimeFormatter.ofPattern("MMM d")
 private val longFmt = DateTimeFormatter.ofPattern("MMM d, yyyy")
 
-fun dateRange(t: Trip): String {
+fun dateRange(t: Trip, showLength: Boolean = true): String {
     val s = LocalDate.ofEpochDay(t.epochDay)
     val e = LocalDate.ofEpochDay(t.endEpochDay)
     val days = t.endEpochDay - t.epochDay + 1
     if (days <= 1) return s.format(longFmt)
     val first = if (s.year == e.year) s.format(shortFmt) else s.format(longFmt)
-    return "$first \u2013 ${e.format(longFmt)} ($days days)"
+    return "$first \u2013 ${e.format(longFmt)}" + (if (showLength) " ($days days)" else "")
 }
 
 fun countdown(t: Trip): String {
@@ -373,14 +374,32 @@ fun FieldButton(
 }
 
 @Composable
-fun ShadowText(text: String, style: TextStyle) {
-    Box {
-        repeat(2) { Text(text, color = Color.White, style = style.copy(shadow = textShadow)) }
+fun ShadowText(
+    text: String,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+    maxLines: Int = Int.MAX_VALUE
+) {
+    Box(modifier) {
+        repeat(2) {
+            Text(
+                text,
+                color = Color.White,
+                style = style.copy(shadow = textShadow),
+                maxLines = maxLines,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
 @Composable
 fun TripCard(trip: Trip, onClick: () -> Unit) {
+    val today = LocalDate.now().toEpochDay()
+    val allPlans = trip.itinerary.sortedBy { it.epochDay }
+    val shown = allPlans.filter { it.epochDay >= today }.ifEmpty { allPlans }
+    val plans = shown.take(4)
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -390,20 +409,41 @@ fun TripCard(trip: Trip, onClick: () -> Unit) {
     ) {
         Box(Modifier.fillMaxWidth().height(200.dp)) {
             TripPhoto(trip.photoPath, Modifier.fillMaxSize(), trip.focusX, trip.focusY, trip.zoom)
-            Column(
+            Row(
                 Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .padding(start = 12.dp, end = 12.dp, bottom = 10.dp)
+                    .padding(start = 12.dp, end = 12.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.Bottom
             ) {
-                ShadowText(trip.name, MaterialTheme.typography.titleLarge)
-                ShadowText(dateRange(trip), MaterialTheme.typography.bodyLarge)
-                ShadowText(countdown(trip), MaterialTheme.typography.titleMedium)
-                if (trip.todos.isNotEmpty()) {
-                    ShadowText(
-                        "To-do: ${trip.todos.count { it.done }} of ${trip.todos.size} done",
-                        MaterialTheme.typography.bodyLarge
-                    )
+                Column(Modifier.weight(1f)) {
+                    ShadowText(trip.name, MaterialTheme.typography.titleLarge)
+                    ShadowText(dateRange(trip, false), MaterialTheme.typography.bodyLarge)
+                    ShadowText(countdown(trip), MaterialTheme.typography.titleMedium)
+                    if (trip.todos.isNotEmpty()) {
+                        ShadowText(
+                            "To-do: ${trip.todos.count { it.done }} of ${trip.todos.size} done",
+                            MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                }
+                if (plans.isNotEmpty()) {
+                    Column(
+                        Modifier.widthIn(max = 150.dp).padding(start = 8.dp),
+                        horizontalAlignment = Alignment.End
+                    ) {
+                        plans.forEach { p ->
+                            val what = if (p.place.isNotBlank()) p.place else p.activity
+                            ShadowText(
+                                LocalDate.ofEpochDay(p.epochDay).format(shortFmt) + " \u00B7 " + what,
+                                MaterialTheme.typography.bodySmall,
+                                maxLines = 1
+                            )
+                        }
+                        if (shown.size > plans.size) {
+                            ShadowText("+${shown.size - plans.size} more", MaterialTheme.typography.bodySmall)
+                        }
+                    }
                 }
             }
         }
@@ -725,6 +765,10 @@ fun TicketViewer(a: Attachment, onClose: () -> Unit, onRemove: () -> Unit) {
     }
 }
 
+val todoOrder: Comparator<TodoItem> = compareBy<TodoItem> { it.done }
+    .thenBy { it.dueEpochDay != null }
+    .thenBy { it.dueEpochDay ?: 0L }
+
 @Composable
 fun TodoSummary(todos: List<TodoItem>) {
     Column(Modifier.fillMaxWidth()) {
@@ -749,7 +793,7 @@ fun TodoSummary(todos: List<TodoItem>) {
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
             )
         }
-        todos.forEach { item ->
+        todos.sortedWith(todoOrder).forEach { item ->
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -842,7 +886,7 @@ fun TodoScreen(trip: Trip, onBack: () -> Unit, onChange: (List<TodoItem>) -> Uni
         }
         if (todos.isNotEmpty()) {
             Column(Modifier.fillMaxWidth().cardShadow().background(Color.White)) {
-                todos.forEachIndexed { index, item ->
+                todos.sortedWith(todoOrder).forEachIndexed { index, item ->
                     if (index > 0) {
                         Box(
                             Modifier
