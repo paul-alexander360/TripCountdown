@@ -115,6 +115,8 @@ fun SettingsScreen(onBack: () -> Unit) {
     var todo7 by remember { mutableStateOf(NotifSettings.getBool(ctx, "todo7", todoDefault)) }
     var todo1 by remember { mutableStateOf(NotifSettings.getBool(ctx, "todo1", todoDefault)) }
     var todo0 by remember { mutableStateOf(NotifSettings.getBool(ctx, "todo0", todoDefault)) }
+    var showRes by remember { mutableStateOf(NotifSettings.getBool(ctx, "showResources", true)) }
+    var origin by remember { mutableStateOf(NotifSettings.getString(ctx, "originCity", "")) }
     var allowed by remember { mutableStateOf(Reminders.canNotify(ctx)) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         allowed = Reminders.canNotify(ctx)
@@ -211,6 +213,29 @@ fun SettingsScreen(onBack: () -> Unit) {
                     todo0 = v
                     NotifSettings.setBool(ctx, "todo0", v)
                 }
+            }
+            SettingsCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Travel resources", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Show links for flights, hotels, rental cars, insurance and activities",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFF455A64)
+                        )
+                    }
+                    Switch(
+                        checked = showRes,
+                        onCheckedChange = { v ->
+                            showRes = v
+                            NotifSettings.setBool(ctx, "showResources", v)
+                        }
+                    )
+                }
+                ShadowField("Your home city (for flight searches)", origin, { v ->
+                    origin = v
+                    NotifSettings.setString(ctx, "originCity", v)
+                }, true)
             }
             FieldButton(onClick = {
                 allowed = Reminders.canNotify(ctx)
