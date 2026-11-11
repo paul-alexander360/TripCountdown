@@ -20,7 +20,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.tripcountdown"
+        applicationId = "com.cpd360.traveltracker"
         minSdk = 26
         targetSdk = 34
         versionCode = buildNumber
