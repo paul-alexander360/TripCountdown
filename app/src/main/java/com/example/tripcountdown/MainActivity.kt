@@ -56,6 +56,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.TextUnit
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
@@ -123,6 +125,7 @@ fun TripApp() {
     var viewingId by remember { mutableStateOf<String?>(null) }
     var showTodos by remember { mutableStateOf(false) }
     var showItinerary by remember { mutableStateOf(false) }
+    var showResources by remember { mutableStateOf(false) }
     val luggage = remember { mutableStateListOf<Luggage>().apply { addAll(TripStore.loadLuggage(ctx)) } }
     var showLuggage by remember { mutableStateOf(false) }
     var showPast by remember { mutableStateOf(false) }
@@ -147,6 +150,7 @@ fun TripApp() {
             AppNav.showSettings -> AppNav.showSettings = false
             viewingBag != null -> viewingLuggageId = null
             showLuggage -> showLuggage = false
+            showResources -> showResources = false
             showItinerary -> showItinerary = false
             showTodos -> showTodos = false
             viewing != null -> viewingId = null
@@ -194,6 +198,8 @@ fun TripApp() {
                 onOpen = { viewingLuggageId = it.id }
             )
         }
+    } else if (viewing != null && showResources) {
+        ResourcesScreen(trip = viewing, onBack = { showResources = false })
     } else if (viewing != null && showItinerary) {
         ItineraryScreen(
             trip = viewing,
@@ -226,6 +232,7 @@ fun TripApp() {
             onEdit = { editing = viewing },
             onTodos = { showTodos = true },
             onItinerary = { showItinerary = true },
+            onResources = { showResources = true },
             onAttachments = { list ->
                 val i = trips.indexOfFirst { it.id == viewing.id }
                 if (i >= 0) {
@@ -245,7 +252,7 @@ fun TripApp() {
         PastTrips(
             trips = pastTrips,
             onBack = { showPast = false },
-            onOpen = { viewingId = it.id; showTodos = false; showItinerary = false }
+            onOpen = { viewingId = it.id; showTodos = false; showItinerary = false; showResources = false }
         )
     } else {
     Column(Modifier.fillMaxSize().background(Color(0xFFE8EEF4))) {
@@ -265,7 +272,7 @@ fun TripApp() {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             items(sorted, key = { it.id }) { trip ->
-                TripCard(trip) { viewingId = trip.id; showTodos = false; showItinerary = false }
+                TripCard(trip) { viewingId = trip.id; showTodos = false; showItinerary = false; showResources = false }
             }
             item { Spacer(Modifier.height(24.dp)) }
         }
@@ -276,7 +283,15 @@ fun TripApp() {
         TripEditor(
             initial = null,
             allLuggage = luggage.toList(),
-            onSave = { trips.add(it); persist(); adding = false },
+            onSave = {
+                trips.add(it)
+                persist()
+                adding = false
+                viewingId = it.id
+                showTodos = false
+                showItinerary = false
+                showResources = false
+            },
             onDelete = null,
             onDismiss = { adding = false }
         )
@@ -509,7 +524,7 @@ fun AppBar(
                         shape = RectangleShape,
                         contentPadding = PaddingValues(horizontal = 4.dp),
                         colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF1B1F24))
-                    ) { Text(label, maxLines = 1) }
+                    ) { Text(label, maxLines = 1, fontSize = if (segments.size >= 5) 12.sp else TextUnit.Unspecified) }
                 }
             }
         }
@@ -544,17 +559,21 @@ fun TripDetails(
     onEdit: () -> Unit,
     onTodos: () -> Unit,
     onItinerary: () -> Unit,
+    onResources: () -> Unit,
     onAttachments: (List<Attachment>) -> Unit,
     onDelete: () -> Unit
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().background(Color(0xFFE8EEF4))) {
+        val showRes = NotifSettings.getBool(LocalContext.current, "showResources", true)
         AppBar(
             title = "Trip Details",
             backLabel = "Back",
             onBack = onBack,
-            actions = listOf("To-do list" to onTodos, "Itinerary" to onItinerary, "Edit trip" to onEdit)
+            actions = listOf("To-do list" to onTodos) +
+                (if (showRes) listOf("Resources" to onResources) else emptyList()) +
+                listOf("Itinerary" to onItinerary, "Edit trip" to onEdit)
         )
         Column(
             Modifier
@@ -578,6 +597,7 @@ fun TripDetails(
                     }
                 }
                 TodoSummary(trip.todos)
+                if (showRes) ResourcesSummary(trip)
                 ItinerarySummary(trip)
                 TicketsSection("Documents", listOf("Airline ticket", "Luggage claim ticket", "Reservation", "Other"), trip.attachments, onAttachments)
                 LuggageStrip(bags)
@@ -1341,6 +1361,7 @@ fun TripEditor(
     var fy by remember { mutableStateOf(initial?.focusY ?: 0.5f) }
     var zoom by remember { mutableStateOf(initial?.zoom ?: 1f) }
     var luggageIds by remember { mutableStateOf(initial?.luggageIds ?: emptyList()) }
+    var destination by remember { mutableStateOf(initial?.destination ?: "") }
     val cardAspect = (LocalConfiguration.current.screenWidthDp - 32f) / 200f
     val dims = remember(photo) {
         photo?.let { p ->
@@ -1376,6 +1397,7 @@ fun TripEditor(
                     ),
                     modifier = Modifier.fillMaxWidth().cardShadow()
                 )
+                ShadowField("Destination for travel links (optional)", destination, { destination = it }, true)
                 FieldButton(onClick = {
                     DatePickerDialog(ctx, { _, y, m, d ->
                         val len = ChronoUnit.DAYS.between(date, endDate)
@@ -1480,7 +1502,8 @@ fun TripEditor(
                         todos = initial?.todos ?: emptyList(),
                         attachments = initial?.attachments ?: emptyList(),
                         luggageIds = luggageIds,
-                        itinerary = initial?.itinerary ?: emptyList()))
+                        itinerary = initial?.itinerary ?: emptyList(),
+                        destination = destination.trim()))
                 }
             ) { Text("Save") }
         },
