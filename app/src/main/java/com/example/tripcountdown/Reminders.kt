@@ -25,6 +25,8 @@ object NotifSettings {
     fun setBool(ctx: Context, key: String, v: Boolean) { p(ctx).edit().putBoolean(key, v).apply() }
     fun getInt(ctx: Context, key: String, def: Int): Int = p(ctx).getInt(key, def)
     fun setInt(ctx: Context, key: String, v: Int) { p(ctx).edit().putInt(key, v).apply() }
+    fun getString(ctx: Context, key: String, def: String): String = p(ctx).getString(key, def) ?: def
+    fun setString(ctx: Context, key: String, v: String) { p(ctx).edit().putString(key, v).apply() }
 }
 
 class ReminderWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
