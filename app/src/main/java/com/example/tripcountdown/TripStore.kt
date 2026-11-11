@@ -53,7 +53,8 @@ data class Trip(
     val todos: List<TodoItem> = emptyList(),
     val attachments: List<Attachment> = emptyList(),
     val luggageIds: List<String> = emptyList(),
-    val itinerary: List<ItineraryItem> = emptyList()
+    val itinerary: List<ItineraryItem> = emptyList(),
+    val destination: String = ""
 )
 
 object TripStore {
@@ -138,7 +139,8 @@ object TripStore {
                         todos = readTodos(o.optJSONArray("todos")),
                         attachments = readAttachments(o.optJSONArray("attachments")),
                         luggageIds = readStrings(o.optJSONArray("luggageIds")),
-                        itinerary = readItinerary(o.optJSONArray("itinerary"))
+                        itinerary = readItinerary(o.optJSONArray("itinerary")),
+                        destination = o.optString("destination", "")
                     )
                 )
             } catch (e: Exception) {
@@ -160,6 +162,7 @@ object TripStore {
                 put("focusY", it.focusY.toDouble())
                 put("zoom", it.zoom.toDouble())
                 put("luggageIds", JSONArray(it.luggageIds))
+                put("destination", it.destination)
                 put("itinerary", JSONArray().also { list ->
                     it.itinerary.forEach { e ->
                         list.put(JSONObject().apply {
