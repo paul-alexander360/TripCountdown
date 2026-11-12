@@ -4,24 +4,20 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,6 +33,9 @@ data class ResourceLink(
 /**
  * Every travel link is built here. To switch to affiliate links later, change the partner
  * addresses below (or wrap them in an affiliate address) and nothing else in the app changes.
+ *
+ * Partners: Skyscanner (flights), Booking.com (hotels), Discover Cars (rental cars),
+ * Viator (activities), World Nomads (travel insurance).
  */
 object ResourceLinks {
     fun destinationOf(trip: Trip): String = trip.destination.ifBlank { trip.name }.trim()
@@ -44,58 +43,56 @@ object ResourceLinks {
     private fun enc(s: String): String = Uri.encode(s)
 
     // --- Partner addresses: replace these with affiliate addresses later ---
-    private fun flightsUrl(origin: String, dest: String, start: String, end: String): String {
-        val from = if (origin.isNotBlank()) "from $origin " else ""
-        return "https://www.google.com/travel/flights?q=" + enc("Flights " + from + "to " + dest + " on " + start + " through " + end)
-    }
+    // Skyscanner needs airport codes in its address, so for now this opens its flights page.
+    private fun flightsUrl(): String = "https://www.skyscanner.com/flights"
 
     private fun hotelsUrl(dest: String, start: String, end: String): String =
         "https://www.booking.com/searchresults.html?ss=" + enc(dest) + "&checkin=" + start + "&checkout=" + end
 
-    private fun carsUrl(dest: String): String =
-        "https://www.google.com/search?q=" + enc("rental cars " + dest)
+    private fun carsUrl(): String = "https://www.discovercars.com/"
 
-    private fun insuranceUrl(dest: String): String =
-        "https://www.google.com/search?q=" + enc("travel insurance for a trip to " + dest)
+    private fun insuranceUrl(): String = "https://www.worldnomads.com/travel-insurance"
 
     private fun activitiesUrl(dest: String): String =
-        "https://www.getyourguide.com/s/?q=" + enc(dest)
+        "https://www.viator.com/searchResults/all?text=" + enc(dest)
     // -----------------------------------------------------------------------
 
+    /** Order matters: 0 flights, 1 hotels, 2 rental cars, 3 insurance, 4 activities. */
     fun build(ctx: Context, trip: Trip): List<ResourceLink> {
         val dest = destinationOf(trip)
         val origin = NotifSettings.getString(ctx, "originCity", "").trim()
         val start = LocalDate.ofEpochDay(trip.epochDay).toString()
         val end = LocalDate.ofEpochDay(trip.endEpochDay).toString()
+        val route = if (origin.isNotBlank()) "from $origin to $dest" else "to $dest"
         return listOf(
             ResourceLink(
                 "Airfare",
                 "Compare airfare to $dest",
-                if (origin.isNotBlank()) "Flights from $origin, " + start + " to " + end else "Flights for " + start + " to " + end,
-                flightsUrl(origin, dest, start, end)
+                "Opens Skyscanner. Search flights $route, $start to $end",
+                flightsUrl()
             ),
             ResourceLink(
                 "Hotels",
                 "Hotel options around $dest",
-                "Places to stay, " + start + " to " + end,
+                "Opens Booking.com for $start to $end",
                 hotelsUrl(dest, start, end)
             ),
             ResourceLink(
                 "Rental cars",
                 "Rental cars for $dest",
-                "Compare car rental companies",
-                carsUrl(dest)
+                "Opens Discover Cars to compare rental companies",
+                carsUrl()
             ),
             ResourceLink(
                 "Travel insurance",
                 "Travel insurance for your trip to $dest",
-                "Cover cancellations, delays, and medical needs",
-                insuranceUrl(dest)
+                "Opens World Nomads for trip cover",
+                insuranceUrl()
             ),
             ResourceLink(
                 "Activities",
                 "Activities and tours in $dest",
-                "Things to do while you are there",
+                "Opens Viator with things to do in $dest",
                 activitiesUrl(dest)
             )
         )
@@ -109,10 +106,17 @@ object ResourceLinks {
     }
 }
 
+/** The section on the trip details page: a bar of four links with a drop shadow. */
 @Composable
 fun ResourcesSummary(trip: Trip) {
     val ctx = LocalContext.current
     val links = ResourceLinks.build(ctx, trip)
+    val bar = listOf(
+        "Flights" to links[0],
+        "Hotels" to links[1],
+        "Cars" to links[2],
+        "Activities" to links[4]
+    )
     Column(Modifier.fillMaxWidth()) {
         Box(
             Modifier
@@ -124,26 +128,36 @@ fun ResourcesSummary(trip: Trip) {
         Text(
             "Travel resources",
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp)
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 2.dp)
         )
-        links.forEach { link ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable { ResourceLinks.open(ctx, link.url) }
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    link.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF1565C0),
-                    modifier = Modifier.weight(1f)
-                )
-                Text("\u203A", style = MaterialTheme.typography.titleMedium, color = Color(0xFF78909C))
+        Text(
+            "Plan your trip to " + ResourceLinks.destinationOf(trip),
+            style = MaterialTheme.typography.bodySmall,
+            color = Color(0xFF455A64),
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp)
+        )
+        Row(
+            Modifier
+                .padding(start = 16.dp, end = 16.dp, bottom = 20.dp)
+                .fillMaxWidth()
+                .height(48.dp)
+                .shadow(8.dp, RectangleShape, ambientColor = Color.Black, spotColor = Color.Black)
+                .background(Color.White)
+                .border(1.dp, Color.Black)
+        ) {
+            bar.forEachIndexed { i, pair ->
+                if (i > 0) {
+                    Box(Modifier.width(1.dp).fillMaxHeight().background(Color.Black))
+                }
+                TextButton(
+                    onClick = { ResourceLinks.open(ctx, pair.second.url) },
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    shape = RectangleShape,
+                    contentPadding = PaddingValues(horizontal = 4.dp),
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF1565C0))
+                ) { Text(pair.first, maxLines = 1) }
             }
         }
-        Spacer(Modifier.height(8.dp))
     }
 }
 
