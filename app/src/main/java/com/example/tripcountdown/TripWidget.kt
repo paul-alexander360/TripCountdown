@@ -65,7 +65,7 @@ private fun shadowPaint(size: Float, bold: Boolean): Paint = Paint(Paint.ANTI_AL
     color = Color.WHITE
     textSize = size
     typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
-    setShadowLayer(size * 0.12f, size * 0.07f, size * 0.07f, Color.BLACK)
+    setShadowLayer(size * 0.10f, size * 0.08f, size * 0.08f, Color.BLACK)
 }
 
 private fun drawLine(canvas: Canvas, text: String, bold: Boolean, size: Float, x: Float, y: Float, availW: Float): Float {
@@ -76,6 +76,7 @@ private fun drawLine(canvas: Canvas, text: String, bold: Boolean, size: Float, x
         s = size * availW / m
         p = shadowPaint(s, bold)
     }
+    canvas.drawText(text, x, y - p.descent(), p)
     canvas.drawText(text, x, y - p.descent(), p)
     canvas.drawText(text, x, y - p.descent(), p)
     return s * 1.2f
