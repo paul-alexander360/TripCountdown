@@ -160,7 +160,7 @@ fun ItineraryEditor(item: ItineraryItem, onSave: (ItineraryItem) -> Unit, onDism
                         date.year, date.monthValue - 1, date.dayOfMonth
                     ).show()
                 }) { Text(date.format(itDateFmt)) }
-                ShadowField("Where (port, city, hotel)", place, { place = it }, true)
+                ShadowField("Where (up to 12 characters)", place, { place = it.take(12) }, true)
                 ShadowField("Excursion or plans", activity, { activity = it }, false)
             }
         },
@@ -205,6 +205,11 @@ fun ItineraryScreen(trip: Trip, onBack: () -> Unit, onChange: (List<ItineraryIte
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            Text(
+                "Add the location you are or an activity you are doing and the day of the trip it will fall on. (Example: Cabo San Lucas, Beach Day)",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF455A64)
+            )
             Column {
                 Text(trip.name, style = MaterialTheme.typography.headlineMedium)
                 Text(
@@ -220,7 +225,7 @@ fun ItineraryScreen(trip: Trip, onBack: () -> Unit, onChange: (List<ItineraryIte
                     date.year, date.monthValue - 1, date.dayOfMonth
                 ).show()
             }) { Text(dateText) }
-            ShadowField("Where (port, city, hotel)", place, { place = it }, true)
+            ShadowField("Where (up to 12 characters)", place, { place = it.take(12) }, true)
             ShadowField("Excursion or plans", activity, { activity = it }, false)
             FieldButton(onClick = { add() }) { Text("Add to itinerary") }
 
