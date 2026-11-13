@@ -81,7 +81,7 @@ fun dateRange(t: Trip, showLength: Boolean = true): String {
     val days = t.endEpochDay - t.epochDay + 1
     if (days <= 1) return s.format(longFmt)
     val first = if (s.year == e.year) s.format(shortFmt) else s.format(longFmt)
-    return "$first \u2013 ${e.format(longFmt)}" + (if (showLength) " ($days days)" else "")
+    return "$first \u2013 ${e.format(longFmt)}"
 }
 
 fun countdown(t: Trip): String {
@@ -364,7 +364,7 @@ fun TripPhoto(path: String?, modifier: Modifier, fx: Float = 0.5f, fy: Float = 0
     }
 }
 
-private val textShadow = Shadow(color = Color.Black, offset = Offset(6f, 6f), blurRadius = 6f)
+private val textShadow = Shadow(color = Color.Black, offset = Offset(5f, 5f), blurRadius = 4f)
 
 private val cardShape = RoundedCornerShape(12.dp)
 
@@ -397,7 +397,7 @@ fun ShadowText(
     maxLines: Int = Int.MAX_VALUE
 ) {
     Box(modifier) {
-        repeat(2) {
+        repeat(3) {
             Text(
                 text,
                 color = Color.White,
@@ -434,12 +434,15 @@ fun TripCard(trip: Trip, onClick: () -> Unit) {
             ) {
                 Column(Modifier.weight(1f)) {
                     ShadowText(trip.name, MaterialTheme.typography.titleLarge)
-                    ShadowText(dateRange(trip, false), MaterialTheme.typography.bodyLarge)
-                    ShadowText(countdown(trip), MaterialTheme.typography.titleMedium)
+                    ShadowText(dateRange(trip, false), MaterialTheme.typography.bodySmall)
+                    ShadowText(
+                        countdown(trip),
+                        MaterialTheme.typography.bodySmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    )
                     if (trip.todos.isNotEmpty()) {
                         ShadowText(
                             "To-do: ${trip.todos.count { it.done }} of ${trip.todos.size} done",
-                            MaterialTheme.typography.bodyLarge
+                            MaterialTheme.typography.bodySmall
                         )
                     }
                 }
@@ -945,6 +948,11 @@ fun TodoScreen(trip: Trip, onBack: () -> Unit, onChange: (List<TodoItem>) -> Uni
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        Text(
+            "Create a to do list of anything that needs to get done prior to your trip. Once it is created tap on Set Date to set the due date, then tap the check box to the left when it is complete. (Example: Book Airfare, Feb 1, 2028)",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color(0xFF455A64)
+        )
         Column {
             Text(trip.name, style = MaterialTheme.typography.headlineMedium)
             Text(
@@ -1263,6 +1271,11 @@ fun LuggageEditor(initial: Luggage?, onSave: (Luggage) -> Unit, onDismiss: () ->
         title = { Text(if (initial == null) "New luggage" else "Edit luggage") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    "Add or Edit Luggage. Name the luggage, select a picture of the piece of luggage.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF455A64)
+                )
                 TextField(
                     name, { name = it },
                     label = { Text("Luggage name") }, singleLine = true,
@@ -1385,9 +1398,14 @@ fun TripEditor(
         title = { Text(if (initial == null) "New trip" else "Edit trip") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    "Create or Edit a trip. Select the name, destination city, dates of travel and select an image.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF455A64)
+                )
                 TextField(
-                    name, { name = it },
-                    label = { Text("Trip name") }, singleLine = true,
+                    name, { name = it.take(16) },
+                    label = { Text("Trip name (up to 16 characters)") }, singleLine = true,
                     shape = cardShape,
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Color.White,
