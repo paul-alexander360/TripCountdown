@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import com.google.android.gms.ads.MobileAds
 import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.launch
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -66,7 +67,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         TripStore.migrate(applicationContext)
-        setContent { MaterialTheme { TripApp() } }
+        Thread { MobileAds.initialize(applicationContext) }.start()
+        setContent {
+            MaterialTheme {
+                Column(Modifier.fillMaxSize()) {
+                    Box(Modifier.weight(1f)) { TripApp() }
+                    AdBanner()
+                }
+            }
+        }
     }
 }
 
