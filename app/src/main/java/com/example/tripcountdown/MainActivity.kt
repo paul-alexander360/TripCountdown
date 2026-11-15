@@ -4,7 +4,9 @@ import android.app.DatePickerDialog
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
+import androidx.activity.enableEdgeToEdge
 import com.google.android.gms.ads.MobileAds
 import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.launch
@@ -66,13 +68,29 @@ import java.time.temporal.ChronoUnit
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
+        )
         TripStore.migrate(applicationContext)
         Thread { MobileAds.initialize(applicationContext) }.start()
         setContent {
             MaterialTheme {
-                Column(Modifier.fillMaxSize()) {
-                    Box(Modifier.weight(1f)) { TripApp() }
+                Column(Modifier.fillMaxSize().background(Color(0xFFE8EEF4))) {
+                    Spacer(
+                        Modifier
+                            .fillMaxWidth()
+                            .windowInsetsTopHeight(WindowInsets.statusBars)
+                            .background(Color(0xFF1565C0))
+                    )
+                    Box(Modifier.weight(1f).imePadding()) { TripApp() }
                     AdBanner()
+                    Spacer(
+                        Modifier
+                            .fillMaxWidth()
+                            .windowInsetsBottomHeight(WindowInsets.navigationBars)
+                            .background(Color.White)
+                    )
                 }
             }
         }
